@@ -88,7 +88,16 @@ from app.core import *
 
 import app.core as core
 
-from app.routes import router as api_router
+from app.routers.misc import router as misc_router
+from app.routers.storage import router as storage_router
+from app.routers.assets import router as assets_router
+from app.routers.comfyui import router as comfyui_router
+from app.routers.runninghub import router as runninghub_router
+from app.routers.cli import router as cli_router
+from app.routers.providers import router as providers_router
+from app.routers.generation import router as generation_router
+from app.routers.canvases import router as canvases_router
+from app.routers.prompt_lib import router as prompt_lib_router
 
 
 
@@ -352,7 +361,25 @@ async def jimeng_pending_exception_handler(request: Request, exc: JimengPendingE
 
 
 
-app.include_router(api_router)
+app.include_router(misc_router)
+
+app.include_router(storage_router)
+
+app.include_router(assets_router)
+
+app.include_router(comfyui_router)
+
+app.include_router(runninghub_router)
+
+app.include_router(cli_router)
+
+app.include_router(providers_router)
+
+app.include_router(generation_router)
+
+app.include_router(canvases_router)
+
+app.include_router(prompt_lib_router)
 
 
 
