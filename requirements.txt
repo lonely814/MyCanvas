@@ -1,7 +1,12 @@
+# Web framework & server
 fastapi
-uvicorn
+uvicorn[standard]   # [standard] extra is required for WebSocket support
+# HTTP clients
 requests
+httpx
+# Data & files
 pydantic
 python-multipart
-httpx
 pillow
+# NOTE: ffmpeg/ffprobe are runtime system dependencies (video export/preview),
+# install on the host: apt install ffmpeg (Debian/Ubuntu) or yum install ffmpeg
