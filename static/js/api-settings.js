@@ -47,8 +47,6 @@ const rhWorkflowsList = document.getElementById('rhWorkflowsList');
 const rhAppsCount = document.getElementById('rhAppsCount');
 const rhWorkflowsCount = document.getElementById('rhWorkflowsCount');
 const settingsContent = document.getElementById('settingsContent');
-const recommendContent = document.getElementById('recommendContent');
-const recommendPanel = document.getElementById('recommendPanel');
 const providerOnboardingCard = document.getElementById('providerOnboardingCard');
 const rhWorkflowEditorOverlay = document.getElementById('rhWorkflowEditorOverlay');
 const rhWorkflowEditorTitle = document.getElementById('rhWorkflowEditorTitle');
@@ -66,8 +64,6 @@ const chatModelList = document.getElementById('chatModelList');
 const videoModelList = document.getElementById('videoModelList');
 const msLoraBlock = document.getElementById('msLoraBlock');
 const msLoraList = document.getElementById('msLoraList');
-const recommendApiOverlay = document.getElementById('recommendApiOverlay');
-const recommendApiList = document.getElementById('recommendApiList');
 const VOLCENGINE_DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3';
 const VOLCENGINE_DEFAULT_PROJECT_NAME = 'default';
 const VOLCENGINE_DEFAULT_REGION = 'cn-beijing';
@@ -80,9 +76,8 @@ const MS_BUILTIN_IMAGE_MODELS = [
 const MS_DEFAULT_BASE_URL = 'https://api-inference.modelscope.cn/v1';
 const RH_DEFAULT_BASE_URL = 'https://www.runninghub.ai';
 const LINGJING_DEFAULT_BASE_URL = 'https://apistudio.vip';
-const LINGJING_REGISTER_URL = 'https://apistudio.vip/register?aff=g1CT';
+const LINGJING_REGISTER_URL = 'https://apistudio.vip/register';
 const VIP_GPT_DEFAULT_BASE_URL = 'https://www.vip-gpt.net';
-const VIP_GPT_REGISTER_URL = 'https://www.vip-gpt.net/vip-gpt/register?aff=YGMS7BDKNY5Y';
 const EXAMPLE_BASE_URL = 'https://api.example.com/v1';
 const JIMENG_DEFAULT_IMAGE_MODELS = ['5.0Pro', '5.0', '4.7', '4.6', '4.5', '4.1', '4.0', '3.1', '3.0'];
 const JIMENG_DEFAULT_VIDEO_MODELS = ['seedance2.0fast_vip', 'seedance2.0_vip', 'seedance2.0', 'seedance2.0fast', 'seedance2.0mini'];
@@ -112,9 +107,9 @@ const ONBOARDING_GUIDES = {
         titleKey:'api.rhOnboardingTitle',
         descKey:'api.rhOnboardingDesc',
         primaryLabelKey:'api.rhGetKeyGlobal',
-        primaryUrl:'https://www.runninghub.ai/enterprise-api/consumerApi?inviteCode=rh-v1331',
+        primaryUrl:'https://www.runninghub.ai/enterprise-api/consumerApi',
         walletPrimaryLabelKey:'api.rhGetWalletKeyGlobal',
-        walletPrimaryUrl:'https://www.runninghub.ai/enterprise-api/sharedApi?inviteCode=rh-v1331'
+        walletPrimaryUrl:'https://www.runninghub.ai/enterprise-api/sharedApi'
     },
     lingjing:{
         titleKey:'api.lingjingOnboardingTitle',
@@ -149,143 +144,8 @@ function applyCliProtocolDefaults(item, protocol){
 }
 let rhWorkflowEditorState = { open:false, index:-1, entry:null, config:null, expanded:{}, activeNodeId:'', graph:{ k:1, x:0, y:0, w:0, h:0 }, pan:null, bound:false, previewParams:{}, previewRunning:false, previewStatus:'', previewOutputs:[] };
 let rhEditorMode = 'workflow';
-let recommendInlineOpen = false;
 let providerDragId = '';
 // category: 'allround'（全能）| 'value'（性价比）| 'free'（免费），推荐面板按分组分节展示
-const RECOMMENDED_APIS = [
-    {
-        id:'fhl',
-        name:'FHL',
-        category:'value',
-        base_url:'https://www.fhl.mom',
-        protocol:'openai',
-        // FHL 生图当前走 OpenAI Images 协议：文生图 /v1/images/generations，图生图 /v1/images/edits
-        image_request_mode:'openai',
-        register_url:'https://www.fhl.mom/register?aff=86L574B4T2N9',
-        tagKeys:['Codex','Claude','api.tagGptImage2'],
-        icons:['CODEX','GPT','IMG'],
-        summaryKey:'api.recommendFhlSummary',
-        advantages:['稳定便宜接入 codex/Claude/GPT Image 2出图', 'OpenAI Images 生图直连', '预填 gpt-image-2 全系模型'],
-        image_models:['gpt-image-2', 'gpt-image-2-2k', 'gpt-image-2-4k', 'nano-banana'],
-        chat_models:['gpt-5.5'],
-        video_models:[]
-    },
-    {
-        id:'runninghub',
-        name:'RunningHub',
-        category:'allround',
-        base_url:RH_DEFAULT_BASE_URL,
-        protocol:'runninghub',
-        image_request_mode:'openai',
-        register_url:ONBOARDING_GUIDES.runninghub.primaryUrl,
-        tagKeys:['api.tagImageModels','api.tagVideoModels','api.tagLlmModels','api.tagSeedance'],
-        icons:['IMG','VID','LLM'],
-        summaryKey:'api.recommendRunninghubSummary',
-        advantages:['覆盖图像、视频和 LLM', 'RunningHub OpenAPI 工作流', 'Seedance 视频模型可用']
-    },
-    {
-        name:'APIMART',
-        category:'allround',
-        base_url:'https://api.apimart.ai',
-        protocol:'apimart',
-        register_url:'https://apimart.ai/zh/register?aff=1uyAbb',
-        register_url_cn:'https://apib.ai/register?aff=1uyAbb',
-        tagKeys:['api.tagImageModels','api.tagVideoModels','api.tagLlmModels','api.tagSeedance'],
-        icons:['IMG','VID','LLM'],
-        summaryKey:'api.recommendApimartSummary',
-        advantages:['模型类型覆盖广', '适合多节点混合工作流', '异步协议适合长任务']
-    },
-    {
-        id:'lingjing',
-        name:'灵境API',
-        category:'value',
-        base_url:LINGJING_DEFAULT_BASE_URL,
-        protocol:'openai',
-        register_url:LINGJING_REGISTER_URL,
-        tagKeys:['api.tagImageModels','api.tagVideoModels','api.tagLlmModels'],
-        icons:['IMG','VID','LLM'],
-        summaryKey:'api.recommendLingjingSummary',
-        advantages:['签到送积分', '六折专属优惠', '图像/视频/LLM 全覆盖'],
-        // 添加平台时预填的默认模型列表（含逐模型协议覆盖）
-        image_models:['gpt-image-2', 'gemini-3.1-flash-image-preview', 'gemini-3-pro-image-preview'],
-        chat_models:['gpt-5.5'],
-        video_models:['veo3.1-fast'],
-        model_protocols:{'gemini-3.1-flash-image-preview':'gemini', 'gemini-3-pro-image-preview':'gemini'}
-    },
-    {
-        id:'modelscope',
-        name:'ModelScope',
-        category:'free',
-        base_url:MS_DEFAULT_BASE_URL,
-        protocol:'openai',
-        image_request_mode:'openai',
-        register_url:ONBOARDING_GUIDES.modelscope.secondaryUrl,
-        register_url_cn:ONBOARDING_GUIDES.modelscope.primaryUrl,
-        tagKeys:['api.tagImageModels','api.tagLlmModels','api.tagAliyunBinding'],
-        icons:['IMG','LLM'],
-        summaryKey:'api.recommendModelScopeSummary',
-        perkKey:'api.recommendModelScopeFree',
-        perkClass:'recommend-free-tag',
-        advantages:['免费额度可用', '需要绑定阿里云账号', '适合基础图像与 LLM 测试']
-    },
-    {
-        name:'Agnes AI',
-        category:'free',
-        base_url:'https://apihub.agnes-ai.com',
-        protocol:'openai',
-        image_request_mode:'openai-json',
-        register_url:'https://platform.agnes-ai.com/settings/apiKeys',
-        tagKeys:['api.tagImageModels','api.tagVideoModels','api.tagLlmModels'],
-        icons:['IMG','VID','LLM'],
-        summaryKey:'api.recommendAgnesSummary',
-        perkKey:'api.recommendAgnesFree',
-        perkClass:'recommend-free-tag',
-        advantages:['免费额度可用', '支持 Agnes 图像与视频接口', 'OpenAI 兼容地址配置简单'],
-        image_models:['agnes-image-2.1-flash', 'agnes-image-2.0-flash'],
-        chat_models:[],
-        video_models:['agnes-video-v2.0']
-    }
-];
-const RECOMMEND_GROUPS = [
-    {key:'allround', titleKey:'api.recommendGroupAllround', icon:'blocks'},
-    {key:'value', titleKey:'api.recommendGroupValue', icon:'badge-percent'},
-    {key:'free', titleKey:'api.recommendGroupFree', icon:'gift'}
-];
-// Exellome keeps APIMart as its recommended default, but users may switch the
-// provider to another compatible protocol when the upstream configuration changes.
-const LOCKED_RECOMMENDED_PROTOCOL_IDS = new Set(['fhl']);
-function lockedRecommendedApi(itemOrId){
-    const id = typeof itemOrId === 'string' ? itemOrId : itemOrId?.id;
-    const name = typeof itemOrId === 'string' ? '' : itemOrId?.name;
-    const baseUrl = typeof itemOrId === 'string' ? '' : itemOrId?.base_url;
-    const normalizedId = String(id || '').trim().toLowerCase();
-    const normalizedName = String(name || '').trim().toLowerCase();
-    const normalizedBase = String(baseUrl || '').trim().replace(/\/+$/, '').toLowerCase();
-    const normalizedHost = (() => {
-        try { return new URL(normalizedBase).host.toLowerCase(); } catch(e) { return ''; }
-    })();
-    return RECOMMENDED_APIS.find(api => {
-        if(!LOCKED_RECOMMENDED_PROTOCOL_IDS.has(api.id)) return false;
-        const apiBase = String(api.base_url || '').trim().replace(/\/+$/, '').toLowerCase();
-        const apiHost = (() => {
-            try { return new URL(apiBase).host.toLowerCase(); } catch(e) { return ''; }
-        })();
-        return normalizedId === api.id
-            || normalizedName === String(api.name || '').trim().toLowerCase()
-            || (apiBase && normalizedBase === apiBase)
-            || (apiHost && normalizedHost === apiHost);
-    }) || null;
-}
-function hasLockedRecommendedProtocol(itemOrId){
-    return Boolean(lockedRecommendedApi(itemOrId));
-}
-function applyLockedRecommendedProtocol(item){
-    const api = lockedRecommendedApi(item);
-    if(!item || !api) return false;
-    item.protocol = String(api.protocol || 'openai').toLowerCase();
-    item.image_request_mode = normalizeImageRequestMode(api.image_request_mode);
-    return true;
-}
 
 function refreshIcons(){ if(window.lucide) lucide.createIcons(); }
 function tr(key){ return window.StudioI18n ? window.StudioI18n.t(key) : key; }
@@ -575,8 +435,7 @@ function updateApimartDomesticHint(item=provider()){
 }
 function renderProviderOnboarding(item){
     if(!providerOnboardingCard) return;
-    const guide = ONBOARDING_GUIDES[item?.id];
-    const visible = Boolean(!recommendInlineOpen && guide && isNewUserProvider(item));
+    const visible = Boolean(guide && isNewUserProvider(item));
     providerOnboardingCard.hidden = !visible;
     document.body.classList.toggle('show-provider-onboarding', visible);
     if(!visible){
@@ -747,10 +606,7 @@ function syncEditor(){
     item.id = nextId;
     if(oldId !== item.id) selectedId = item.id;
     item.name = nameInput.value.trim() || item.id;
-    const lockedApi = lockedRecommendedApi(item);
-    const selectedProtocol = lockedApi
-        ? lockedApi.protocol
-        : item.id === 'modelscope'
+    const selectedProtocol = item.id === 'modelscope'
         ? 'openai'
         : item.id === 'runninghub'
         ? 'runninghub'
@@ -805,11 +661,6 @@ function ensureRunningHubLists(item){
 function updateProtocolFromInput(){
     const item = provider();
     if(!item || !protocolInput || item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine') return;
-    if(applyLockedRecommendedProtocol(item)){
-        protocolInput.value = item.protocol;
-        if(imageRequestModeInput) imageRequestModeInput.value = item.image_request_mode;
-        return;
-    }
     const value = String(protocolInput.value || 'openai').toLowerCase();
     item.protocol = API_PROTOCOLS.includes(value) ? value : 'openai';
     if(CLI_PROTOCOLS.has(item.protocol)) item.base_url = '';
@@ -2133,197 +1984,6 @@ function renderRhEntryList(target, list, kind){
         </div>
     `).join('');
 }
-function openRecommendApi(){
-    recommendInlineOpen = true;
-    syncRecommendView();
-    renderRecommendApi();
-    renderProviderOnboarding(provider());
-}
-function closeRecommendApi(){
-    if(recommendApiOverlay) recommendApiOverlay.style.display = 'none';
-    recommendInlineOpen = false;
-    syncRecommendView();
-    renderRecommendApi();
-    renderEditor();
-}
-function syncRecommendView(){
-    if(settingsContent) settingsContent.hidden = recommendInlineOpen;
-    if(recommendContent) recommendContent.hidden = !recommendInlineOpen;
-    const recommendTitle = recommendContent?.querySelector('.editor-title');
-    const recommendSub = recommendContent?.querySelector('.editor-sub');
-    if(recommendTitle) recommendTitle.textContent = tr('api.recommendPanelTitle');
-    if(recommendSub) recommendSub.textContent = tr('api.recommendPanelSub');
-    document.body.classList.toggle('show-recommend-mode', recommendInlineOpen);
-}
-function focusRecommendKey(event, index){
-    if(event?.target?.closest?.('a,button,input,textarea,select,label')) return;
-    const input = recommendPanel?.querySelector(`[data-recommend-key="${index}"]`);
-    if(input){
-        input.focus();
-        input.scrollIntoView({block:'nearest', inline:'nearest'});
-    }
-}
-function renderRecommendApi(){
-    if(!recommendPanel) return;
-    if(!recommendInlineOpen){
-        recommendPanel.innerHTML = '';
-        return;
-    }
-    const recommendProtocolBadge = api => api.id === 'runninghub' || api.protocol === 'runninghub'
-        ? 'RH'
-        : api.id === 'modelscope'
-        ? 'ModelScope'
-        : api.protocol === 'apimart'
-        ? 'APIMart'
-        : 'OpenAI';
-    const recommendCardHtml = (api, index) => `
-        <section class="recommend-card recommend-platform-card" style="--recommend-index:${index}" onclick="focusRecommendKey(event, ${index})">
-            <div class="recommend-platform-info">
-                <div class="recommend-platform-head">
-                    <div>
-                        <div class="recommend-name"><span>${escapeHtml(api.name)}</span></div>
-                    </div>
-                    <span class="recommend-badge">${escapeHtml(recommendProtocolBadge(api))}</span>
-                </div>
-                <p class="recommend-platform-summary">${escapeHtml(tr(api.summaryKey))}</p>
-                <div class="recommend-tags">
-                    ${(api.perks || (api.perkKey ? [{key:api.perkKey, className:api.perkClass || ''}] : [])).map(perk => `<span class="recommend-tag recommend-perk-tag ${escapeAttr(perk.className || '')}"><i data-lucide="gift" class="w-3 h-3"></i><span>${escapeHtml(tr(perk.key))}</span></span>`).join('')}
-                    ${(api.tagKeys || []).map(tag => tag === 'api.tagSeedance'
-                        ? `<span class="recommend-tag recommend-seedance-tag"><i data-lucide="video" class="w-3 h-3"></i><span>${escapeHtml(tr(tag))}</span></span>`
-                        : `<span class="recommend-tag">${escapeHtml(tag.startsWith('api.') ? tr(tag) : tag)}</span>`
-                    ).join('')}
-                </div>
-            </div>
-            <div class="recommend-platform-setup">
-                <div class="recommend-setup-title">${escapeHtml(tr('api.recommendQuickSetup'))}</div>
-                <div class="recommend-quick-stack recommend-setup-flow">
-                    <div class="recommend-guide-source onboarding-rh-source-group">
-                        <div class="onboarding-rh-source-label">${escapeHtml(tr('api.getKey'))}</div>
-                        <div class="onboarding-key-actions onboarding-rh-key-actions ${api.register_url_cn ? 'recommend-guide-key-stack' : 'recommend-single-action'}">
-                            ${api.register_url_cn ? `
-                            <a class="onboarding-key-btn recommend-guide-key-btn" href="${escapeAttr(api.register_url)}" target="_blank" rel="noopener noreferrer"><i data-lucide="key-round" class="w-3.5 h-3.5"></i><span>${escapeHtml(tr('api.getKeyGlobal'))}</span></a>
-                            <a class="onboarding-key-btn recommend-guide-key-btn" href="${escapeAttr(api.register_url_cn)}" target="_blank" rel="noopener noreferrer"><i data-lucide="key-round" class="w-3.5 h-3.5"></i><span>${escapeHtml(tr('api.getKeyCn'))}</span></a>
-                            ` : `
-                            <a class="onboarding-key-btn recommend-guide-key-btn" href="${escapeAttr(api.register_url)}" target="_blank" rel="noopener noreferrer"><i data-lucide="key-round" class="w-3.5 h-3.5"></i><span>${escapeHtml(tr('api.getKey'))}</span></a>
-                            `}
-                        </div>
-                    </div>
-                    <div class="recommend-flow-arrow onboarding-flow-arrow recommend-guide-arrow" aria-hidden="true"><span></span><b></b></div>
-                    <div class="recommend-guide-save">
-                        <label class="onboarding-key-field onboarding-rh-row-field">
-                            <span class="recommend-api-key-label">API Key${api.keyHint ? `<em class="recommend-key-inline-hint">${escapeHtml(api.keyHint)}</em>` : ''}</span>
-                            <input type="password" data-recommend-key="${index}" placeholder="${escapeAttr(trf('api.recommendKeyPlaceholder', {name:api.name}))}">
-                        </label>
-                        <button class="onboarding-save-btn recommend-guide-save-btn" type="button" onclick="saveRecommendedApi(${index})"><span>${escapeHtml(tr('api.save'))}</span></button>
-                    </div>
-                </div>
-            </div>
-        </section>
-    `;
-    // 按分组分节渲染（稳定 / 便宜）；index 始终取原数组下标，保证 saveRecommendedApi(index) 正确
-    const html = RECOMMEND_GROUPS.map(group => {
-        const items = RECOMMENDED_APIS
-            .map((api, index) => ({api, index}))
-            .filter(item => (item.api.category || 'cheap') === group.key);
-        if(!items.length) return '';
-        return `
-        <div class="recommend-group">
-            <div class="recommend-group-head recommend-group-${escapeAttr(group.key)}">
-                <i data-lucide="${escapeAttr(group.icon)}" class="w-3.5 h-3.5"></i>
-                <span>${escapeHtml(tr(group.titleKey))}</span>
-            </div>
-            ${items.map(item => recommendCardHtml(item.api, item.index)).join('')}
-        </div>`;
-    }).join('');
-    recommendPanel.innerHTML = `
-        <div class="onboarding-head">
-            <div>
-                <div class="onboarding-title">${escapeHtml(tr('api.recommendPanelHintTitle'))}</div>
-                <div class="onboarding-desc">${escapeHtml(tr('api.recommendPanelHintDesc'))}</div>
-            </div>
-        </div>
-        <div class="recommend-api-body recommend-inline-body">${html}</div>
-        <div class="recommend-note">${escapeHtml(tr('api.recommendApiNote'))}</div>
-        <div class="recommend-note recommend-seedance-private-note">
-            <span class="recommend-seedance-private-icon"><i data-lucide="video" class="w-3.5 h-3.5"></i></span>
-            <span class="recommend-seedance-private-text">${escapeHtml(tr('api.recommendSeedancePrivateNote'))}</span>
-            <a class="recommend-seedance-private-link" href="https://space.bilibili.com/78652351" target="_blank" rel="noopener noreferrer">
-                <i data-lucide="send" class="w-3.5 h-3.5"></i>
-                <span>${escapeHtml(tr('api.recommendSeedancePrivateAction'))}</span>
-            </a>
-        </div>
-    `;
-    refreshIcons();
-}
-function recommendedProviderForApi(api){
-    let item = providers.find(provider =>
-        (api.id && String(provider.id || '').toLowerCase() === String(api.id).toLowerCase())
-        || String(provider.name || '').toLowerCase() === api.name.toLowerCase()
-    );
-    if(item){
-        item.base_url = api.base_url || item.base_url || '';
-        item.protocol = api.protocol || item.protocol || 'openai';
-        item.image_request_mode = normalizeImageRequestMode(api.image_request_mode || item.image_request_mode);
-        item.image_edit_route = normalizeImageEditRoute(api.image_edit_route || item.image_edit_route);
-        if(Array.isArray(api.video_models)) item.video_models = [...api.video_models];
-        if(api.empty_models_on_save){
-            item.image_models = [];
-            item.chat_models = [];
-            item.video_models = [];
-            item.model_protocols = {};
-        }
-        return item;
-    }
-    const baseId = normalizeId(api.id || api.name) || 'custom-api';
-    let id = baseId;
-    let suffix = 2;
-    while(providers.some(provider => provider.id === id)) id = `${baseId}-${suffix++}`;
-    item = {
-        id,
-        name:api.name,
-        base_url:api.base_url,
-        protocol:api.protocol,
-        image_request_mode:normalizeImageRequestMode(api.image_request_mode),
-        image_edit_route:normalizeImageEditRoute(api.image_edit_route),
-        image_generation_endpoint:'',
-        image_edit_endpoint:'',
-        enabled:true,
-        primary:false,
-        image_models:api.empty_models_on_save ? [] : (Array.isArray(api.image_models) ? [...api.image_models] : []),
-        chat_models:api.empty_models_on_save ? [] : (Array.isArray(api.chat_models) ? [...api.chat_models] : []),
-        video_models:api.empty_models_on_save ? [] : (Array.isArray(api.video_models) ? [...api.video_models] : []),
-        model_protocols:api.empty_models_on_save ? {} : ((api.model_protocols && typeof api.model_protocols === 'object') ? {...api.model_protocols} : {}),
-        has_key:false,
-        key_preview:''
-    };
-    providers.push(item);
-    return item;
-}
-async function saveRecommendedApi(index){
-    const api = RECOMMENDED_APIS[index];
-    if(!api) return;
-    const input = recommendPanel?.querySelector(`[data-recommend-key="${index}"]`);
-    const key = input?.value.trim() || '';
-    if(!key){ alert(tr('api.enterApiKey')); return; }
-    const item = recommendedProviderForApi(api);
-    selectedId = item.id;
-    recommendInlineOpen = false;
-    syncRecommendView();
-    renderProviderList();
-    renderEditor();
-    keyInput.value = key;
-    if(protocolInput){
-        protocolInput.value = api.protocol;
-        protocolInput.dispatchEvent(new Event('change'));
-    }
-    if(imageRequestModeInput){
-        imageRequestModeInput.value = normalizeImageRequestMode(api.image_request_mode);
-        imageRequestModeInput.dispatchEvent(new Event('change'));
-    }
-    syncEditor();
-    const ok = await saveProviders();
-    if(ok) setStatus(trf('api.recommendSaved', {name:api.name}));
-}
 function sortedProviders(){
     const order = ['modelscope', 'runninghub', 'volcengine'];
     return visibleProviders().sort((a, b) => {
@@ -2454,8 +2114,6 @@ function renderEditor(){
     clearVerifyResult();
     baseInput.placeholder = EXAMPLE_BASE_URL;
     baseInput.value = item.base_url || '';
-    const lockedApi = lockedRecommendedApi(item);
-    if(lockedApi) applyLockedRecommendedProtocol(item);
     if(protocolInput){
         const protocolValue = String(item.protocol || 'openai').toLowerCase();
         protocolInput.value = item.id === 'runninghub'
@@ -2549,7 +2207,6 @@ function renderEditor(){
     document.body.classList.toggle('show-gemini-cli', isGeminiCli);
     updateApimartDomesticHint(item);
     renderProviderOnboarding(item);
-    renderRecommendApi();
     if(runninghubConfigBlock){
         runninghubConfigBlock.hidden = !isRunningHub;
         runninghubConfigBlock.style.display = isRunningHub ? 'flex' : 'none';
@@ -2874,11 +2531,6 @@ function isRunningHubContext(item, baseUrl=''){
 function applyDetectedImageRequestMode(mode){
     const item = provider();
     if(!item || !imageRequestModeInput) return false;
-    if(applyLockedRecommendedProtocol(item)){
-        if(protocolInput) protocolInput.value = item.protocol;
-        imageRequestModeInput.value = item.image_request_mode;
-        return false;
-    }
     const detected = normalizeImageRequestMode(mode);
     const changed = normalizeImageRequestMode(item.image_request_mode) !== detected || normalizeImageRequestMode(imageRequestModeInput.value) !== detected;
     imageRequestModeInput.value = detected;
@@ -3496,17 +3148,11 @@ function removeMsLora(index){
 }
 function selectProvider(id){
     if(isProviderTemporarilyHidden(providers.find(item => item.id === id))) return;
-    recommendInlineOpen = false;
-    syncRecommendView();
-    renderRecommendApi();
     syncEditor();
     selectedId = id;
     renderEditor();
 }
 function addProvider(){
-    recommendInlineOpen = false;
-    syncRecommendView();
-    renderRecommendApi();
     syncEditor();
     let id = 'custom-api';
     let index = 2;
@@ -3518,9 +3164,6 @@ function addProvider(){
 async function addCliProvider(kind){
     const preset = CLI_PROVIDER_PRESETS[kind];
     if(!preset) return;
-    recommendInlineOpen = false;
-    syncRecommendView();
-    renderRecommendApi();
     syncEditor();
     let item = providers.find(provider => provider.id === preset.id);
     if(!item) item = providers.find(provider => String(provider.protocol || '').toLowerCase() === preset.protocol);
@@ -3700,7 +3343,6 @@ async function loadProviders(){
         providers = data.providers || [];
         selectedId = sortedProviders()[0]?.id || '';
         renderEditor();
-        openRecommendApi();
         setStatus('');
     } catch(err) {
         setStatus(tr('api.loadFailed'));
@@ -3831,8 +3473,7 @@ window.addEventListener('message', event => {
     if(event.data?.type === 'studio-theme' && window.StudioTheme) window.StudioTheme.set(event.data.theme);
     if(event.data?.type === 'studio-lang' && window.StudioI18n) {
         window.StudioI18n.set(event.data.lang);
-        if(recommendInlineOpen) renderRecommendApi();
-        else renderEditor();
+        renderEditor();
     }
 });
 rhWorkflowEditorOverlay?.addEventListener('mousedown', event => {
@@ -3849,19 +3490,12 @@ document.addEventListener('mousedown', event => {
     if(event.target.closest('.rh-editor-gnode,.rh-app-field-card')) return;
     closeRhNodePopover();
 });
-recommendApiOverlay?.addEventListener('mousedown', event => {
-    if(event.target === recommendApiOverlay) closeRecommendApi();
-});
 window.addEventListener('studio-lang-change', () => {
-    syncRecommendView();
-    if(recommendInlineOpen) renderRecommendApi();
-    else renderEditor();
+    renderEditor();
 });
 window.onload = () => {
     if(window.StudioTheme) window.StudioTheme.apply();
     if(window.StudioI18n) window.StudioI18n.apply();
-    syncRecommendView();
-    loadProviders();
     // 平台名输入时实时预览生成的 ID
     if(nameInput) nameInput.addEventListener('input', updateIdPreview);
     if(protocolInput) protocolInput.addEventListener('change', updateProtocolFromInput);

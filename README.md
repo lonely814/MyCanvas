@@ -1,87 +1,54 @@
-# Infinite-Canvas
-Supports comfyui/API calls/modelscope calls
+# Infinite-Canvas（二开精简版）
 
-2026/08/28:
+基于 [wuli大雄 的 Infinite-Canvas](https://github.com/hero8152/Infinite-Canvas)（2026.08.28 停更版）二次开发的个人自用分支。
 
-此项目已停更，全新版本请前往：www.DX-OS.com 下载。
+二开改动：仅面向 **Linux 服务器部署**，拆除了原作者的自更新系统、推广/返利内容、Windows/macOS 桌面分发物料与 gpt-chat / smart-canvas 等未使用模块。**上游已停更，本分支不与上游同步。**
 
-功能特性：
-1. 画布功能全新升级，支持Agent/一键分层/多人协同/共享画布/免费公网图床
-2. 软件内即可启动ComfyUI/映射工作流等
-3. 海量免费APP可下载
-4. 全新的账号管理/APP权限系统
-5. 提供开发者模式，可以开发自己公司的业务软件离线运行
+## 功能概览
 
------
+- 无限画布（经典画布）：图像/视频素材排版、生成、编辑、导出
+- AI 渠道：OpenAI 兼容协议 / Gemini / 火山方舟 / APIMart / ModelScope / RunningHub 工作流 / 即梦 CLI / Codex CLI，统一在「API 设置」页配置
+- 本地/局域网 ComfyUI 反代与工作流调用（`workflows/`）
+- 素材库、提示词库、项目分组、回收站（30 天）
+- 视频能力：LTX 时间轴导演、数字人视频、360 全景
+- 配套工具：`tools/` 下 Chrome 采集插件与 Photoshop 直连插件
 
+## 架构
 
-配套的chrome采集插件已经上线：https://chromewebstore.google.com/detail/infinite-canvas-%E5%9B%BE%E5%83%8F%E8%A7%86%E9%A2%91%E6%96%87%E5%AD%97%E6%8A%93%E5%8F%96%E5%B7%A5/ajfhnbklbmpfaaookhfakohabnpmlcic?authuser=0&hl=en
+- 后端：Python 3.10+ / FastAPI，单文件 `main.py`（后续计划拆分为 `app/` 包）
+- 前端：无构建原生 HTML/JS（`static/`），第三方库本地化于 `static/vendor/`
+- 存储：纯 JSON 文件 + 文件系统（`data/`、`API/.env`、`output/`、`assets/`），无数据库
+- 实时通知：WebSocket `/ws/stats`（在线人数 / 画布更新广播）
 
-详细教程：[https://youtu.be/1y9ShTvgC_w](https://youtu.be/r_y_9ALr7fg)
+## Linux 服务器部署
 
-由于最近很多API网址关停，我找到一个稳定的网址：
+依赖：Python 3.10+、pip、ffmpeg（视频功能需要）。
 
-https://apib.ai/register?aff=1uyAbb （包含所有生图模型/视频模型/LLM模型）
+```bash
+# 1. 安装系统依赖（Debian/Ubuntu）
+sudo apt install -y python3 python3-venv python3-pip ffmpeg
 
-https://www.fhl.mom/register?aff=86L574B4T2N9  （包含codex和GPT image 2模型）
+# 2. 安装 Python 依赖并启动
+./start.sh
+# 或手动：
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python main.py   # 默认 0.0.0.0:3000
+```
 
-功能请求/功能更新/视频教程/联系我，都可以在B站评论或私信：https://space.bilibili.com/78652351
+systemd 常驻部署见 `deploy/infinite-canvas.service`；环境变量说明见 `.env.example`。
 
+### 安全提示（重要）
 
-----
+应用本身**没有用户登录系统**，API Key 明文存于服务端。不要将 3000 端口直接暴露公网：
 
-【新增了version文件，我每次更新都会更新version的版本号，如果你下载version文件，打开项目后，导航栏的GitHub按键就会提示新版本，如果不想查看更新提示，就删除version文件】
+- 局域网使用：直接访问 `http://<服务器IP>:3000`
+- 公网使用：务必置于 Nginx/Caddy 反代 + Basic Auth 之后，或设置 `API_TOKEN` 启用应用层 Token 鉴权
 
-【A version file has been added. I update the version number with each update. If you download the version file, the GitHub button in the navigation bar will indicate the new version after opening the project. If you don't want to see update notifications, delete the version file.】
+### 外部 CLI 渠道（可选）
 
-----
+即梦 / Codex / Gemini 渠道依赖对应 CLI（见 `CLI/README.md`），需在服务器上以运行服务的用户身份安装并登录。
 
-支持的功能：
-1. 支持几乎所有OpenAI协议的API/异步协议/Gemini协议/方舟协议
-2. RunningHub的工作流/AI应用/收费模型调用
-3. 火山引擎调用（人脸认证还在修复bug）
-4. Modelscope免费LLM模型和图像模型调用
-5. 即梦CLI调用，可直接调用即梦高级会员的积分，支持文生图/图生图/文生视频/图生视频
-6. 支持调用本地局域网的ComfyUI
-7. 扩展图片/360全景图预览截图/视频帧抽取/循环节点等诸多功能
-8. tools文件夹中，增加了chrome批量采集到素材库的插件，PS直连画布调用所有功能的插件
+## 许可与署名
 
---------
-
-已经申请著作权，禁止商业用途
-
-Commercial use is prohibited.
-
-
-* 可以自己使用和公司使用，禁止用于任何形式的修改封装成商业产品，商用须取得授权。
-
-* 根据代码二次开发的软件必须保持开源并注明来源作者
-
-* This software is for personal and company use only, but is prohibited from being modified or packaged into commercial products in any way. Commercial use requires authorization.
-
-* Software developed based on this code must remain open source and the original author must be credited.
-
---------
-
-
-<img width="2079" height="665" alt="image" src="https://github.com/user-attachments/assets/8469923b-f7a2-403c-9c37-e6e789211f28" />
-
-<img width="1865" height="1503" alt="image" src="https://github.com/user-attachments/assets/f4030201-67c6-4845-b08b-b6fdf304afaa" />
-
-
-<img width="1696" height="1350" alt="b68e144c5b04a322bfd035da4d89aba3" src="https://github.com/user-attachments/assets/0a6090fb-a8dd-4c3d-adee-b1f9233a2d91" />
-
-   
-<img width="1525" height="1473" alt="image" src="https://github.com/user-attachments/assets/6f61fcf9-746c-425b-9e36-cfc8d252da7c" />
-
-   <img width="1261" height="864" alt="image" src="https://github.com/user-attachments/assets/57f3e230-3134-488f-8179-d97e7d15383a" />
-<img width="1530" height="858" alt="image" src="https://github.com/user-attachments/assets/9990e42d-22d5-4a10-a1e1-ad35a634edd2" />
-
-<img width="1735" height="1400" alt="image" src="https://github.com/user-attachments/assets/d8328ff8-bbe0-4f1c-9ffa-7b56e8a1a51d" />
-<img width="2258" height="969" alt="image" src="https://github.com/user-attachments/assets/4a752d99-885d-4ba9-8b86-91b495786b5c" />
-
-
-<img width="1531" height="1374" alt="image" src="https://github.com/user-attachments/assets/0af79e38-0955-4740-9e65-5c9bb057f58c" />
-
-<img width="2196" height="1040" alt="image" src="https://github.com/user-attachments/assets/6d823668-cde2-4836-8332-1858efe5f520" />
-<img width="2214" height="771" alt="image" src="https://github.com/user-attachments/assets/52e10958-753f-45ba-a50e-3bbec27be436" />
+本项目沿用上游的自定义许可（见 `LICENSE`）：**禁止商用；二次开发衍生品必须保持开源并注明原作者**。原作者：wuli大雄（[hero8152/Infinite-Canvas](https://github.com/hero8152/Infinite-Canvas)）。
