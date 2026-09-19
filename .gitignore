@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.zcode/
+API/.env
+global_config.json
+history.json
+output/
+assets/
