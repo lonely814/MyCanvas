@@ -73,7 +73,7 @@ let pendingDeleteProjectId = null;
 let statusTimer = null;
 let clipboardCanvasId = null;   // 剪切的画布（切到别的项目后粘贴）
 
-// board viewport (mirrors smart-canvas math)
+// board viewport
 const viewport = { x: 0, y: 0, scale: 1 };
 const MIN_SCALE = 0.3, MAX_SCALE = 2;
 
@@ -87,7 +87,7 @@ function setStatus(text){
     statusTimer = setTimeout(() => statusEl.classList.remove('show'), 2200);
 }
 
-/* ===== Viewport math (mirrors smart-canvas.js) ===== */
+/* ===== Viewport math ===== */
 function applyViewport(){
     boardWorld.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`;
     board.style.backgroundSize = `${120 * viewport.scale}px ${120 * viewport.scale}px, ${120 * viewport.scale}px ${120 * viewport.scale}px, ${24 * viewport.scale}px ${24 * viewport.scale}px`;
@@ -386,7 +386,6 @@ function renderBoard(){
 }
 
 function buildCard(c){
-    const isSmart = (c.kind || 'classic') === 'smart';
     const card = document.createElement('div');
     card.className = 'ws-card'
         + (String(c.color || '').trim() ? ' cc-marked' : '')
@@ -397,7 +396,7 @@ function buildCard(c){
     // 卡片布局：顶部=类型标签+更多按钮；中部=标题；底部=节点数·时间。已移除图标。
     card.innerHTML = `
         <div class="ws-card-top">
-            <span class="ws-card-kind ${isSmart ? 'smart' : 'classic'}">${isSmart ? compactLabel('智能画布','智能','Smart') : compactLabel('普通画布','普通','Classic')}</span>
+            <span class="ws-card-kind classic">${compactLabel('普通画布','普通','Classic')}</span>
             <button class="ws-card-menu" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>
         </div>
         <div class="ws-card-title">${escapeHtml(c.title)}</div>
@@ -466,9 +465,7 @@ function openCanvas(c){
     const enc = encodeURIComponent(c.id);
     const project = encodeURIComponent(c.project || currentProjectId || 'default');
     rememberProjectId(c.project || currentProjectId || 'default');
-    window.location.href = (c.kind === 'smart')
-        ? `/static/smart-canvas.html?id=${enc}&project=${project}&v=2026.07.03.4`
-        : `/static/canvas.html?id=${enc}&project=${project}&v=2026.07.03.4`;
+    window.location.href = `/static/canvas.html?id=${enc}&project=${project}&v=2026.07.03.4`;
 }
 
 /* ===== Card create flow ===== */
@@ -488,7 +485,6 @@ function openCreateCard(worldPt){
         <input class="ws-create-input" type="text" maxlength="80" placeholder="${L('画布名称（可留空）','Canvas name (optional)')}">
         <div class="ws-create-toggle">
             <button class="ws-create-toggle-btn active" type="button" data-kind="classic">${L('普通画布','Classic')}</button>
-            <button class="ws-create-toggle-btn" type="button" data-kind="smart">${L('智能画布','Smart')}</button>
         </div>
         <div class="ws-create-actions">
             <button class="ws-create-confirm" type="button">${L('创建','Create')}</button>
@@ -516,8 +512,7 @@ function openCreateCard(worldPt){
 }
 
 async function createCanvasOnBoard(title, kind, worldPt){
-    const isSmart = kind === 'smart';
-    const base = isSmart ? L('智能画布','Smart canvas') : L('画布','Canvas');
+    const base = L('画布','Canvas');
     const name = title || `${base} ${new Date().toLocaleTimeString(langIsEn() ? 'en-US' : 'zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
     closeCreateCard();
     try {
@@ -526,8 +521,8 @@ async function createCanvasOnBoard(title, kind, worldPt){
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 title: name,
-                icon: isSmart ? 'sparkles' : '🧩',
-                kind: isSmart ? 'smart' : 'classic',
+                icon: '🧩',
+                kind: 'classic',
                 project: currentProjectId,
                 board_x: Math.round(worldPt.x),
                 board_y: Math.round(worldPt.y)
@@ -925,15 +920,14 @@ function renderTrash(){
         return;
     }
     deletedCanvases.forEach(c => {
-        const isSmart = (c.kind || 'classic') === 'smart';
         const projName = (projects.find(p => p.id === (c.project || 'default')) || {}).name || L('默认项目','Default');
         const card = document.createElement('div');
         card.className = 'ws-trash-card';
         card.dataset.canvasId = c.id;
         card.innerHTML = `
             <div class="ws-card-top">
-                <span class="ws-card-icon">${renderCanvasIcon(isSmart && /[^\x00-\x7F]/.test(c.icon || '') ? 'sparkles' : c.icon, 17)}</span>
-                <span class="ws-card-kind ${isSmart ? 'smart' : 'classic'}">${isSmart ? L('智能','Smart') : L('普通','Classic')}</span>
+                <span class="ws-card-icon">${renderCanvasIcon(c.icon, 17)}</span>
+                <span class="ws-card-kind classic">${L('普通','Classic')}</span>
             </div>
             <div class="ws-card-title">${escapeHtml(c.title)}</div>
             <div class="ws-card-meta"><span class="ws-card-nodes">${escapeHtml(projName)}</span><span class="ws-card-meta-dot"></span><span class="ws-card-time">${formatCanvasTime(c.deleted_at)}</span></div>

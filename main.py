@@ -219,6 +219,7 @@ LOCAL_UPLOAD_DIR = os.path.join(ASSETS_DIR, "uploads")
 HISTORY_FILE = os.path.join(BASE_DIR, "history.json")
 API_ENV_FILE = os.path.join(BASE_DIR, "API", ".env")
 DATA_DIR = os.path.join(BASE_DIR, "data")
+CANVAS_DIR = os.path.join(DATA_DIR, "canvases")
 MEDIA_PREVIEW_DIR = os.path.join(DATA_DIR, "media_previews")
 ASSET_LIBRARY_PATH = os.path.join(DATA_DIR, "asset_library.json")
 PROMPT_LIBRARY_PATH = os.path.join(DATA_DIR, "prompt_libraries.json")
@@ -285,7 +286,6 @@ QUEUE = []
 QUEUE_LOCK = Lock()
 HISTORY_LOCK = Lock()
 GLOBAL_CONFIG_LOCK = Lock()
-CONVERSATION_LOCK = Lock()
 CANVAS_LOCK = Lock()
 LOAD_LOCK = Lock()
 RUNNINGHUB_WORKFLOW_LOCK = Lock()
@@ -574,6 +574,7 @@ IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gpt-image-2")
 AI_REQUEST_TIMEOUT = float(os.getenv("REQUEST_TIMEOUT", "1800"))
 IMAGE_POLL_INTERVAL = float(os.getenv("IMAGE_POLL_INTERVAL", "2"))
 IMAGE_TASK_TIMEOUT = float(os.getenv("IMAGE_TASK_TIMEOUT", str(AI_REQUEST_TIMEOUT)))
+MAX_HISTORY_MESSAGES = int(os.getenv("MAX_HISTORY_MESSAGES", "30"))
 COMFYUI_HISTORY_TIMEOUT = int(float(os.getenv("COMFYUI_HISTORY_TIMEOUT", "1800")))
 # 下载 ComfyUI 产物的 socket 超时（秒，作用于连接和每次 read）。没有它时一次网络卡顿会让 urlopen 永久挂起，
 # 导致 generate() 不返回、画布卡片一直转圈拿不到结果。给得足够大以容纳大视频/大图的正常下载。
@@ -1537,6 +1538,7 @@ os.makedirs(ASSET_LIBRARY_DIR, exist_ok=True)
 os.makedirs(LOCAL_UPLOAD_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(WORKFLOW_DIR, exist_ok=True)
+os.makedirs(CANVAS_DIR, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/output", StaticFiles(directory=OUTPUT_DIR), name="output")
@@ -2008,28 +2010,6 @@ class CanvasWorkflowExportRequest(BaseModel):
     category_id: str = ""
     name: str = ""
 
-class SmartCanvasGroupExportItem(BaseModel):
-    kind: str = ""
-    url: str = ""
-    text: str = ""
-    name: str = ""
-
-class SmartCanvasGroupExportRequest(BaseModel):
-    folder: str = ""
-    group_name: str = "group"
-    items: List[SmartCanvasGroupExportItem] = []
-
-class MiniMaxTimelineClip(BaseModel):
-    url: str = ""
-    name: str = ""
-    start: float = 0
-    end: float = 0
-    duration: float = 0
-
-class MiniMaxTimelineExportRequest(BaseModel):
-    clips: List[MiniMaxTimelineClip] = []
-    filename: str = "minimax-timeline.mp4"
-
 class LocalImageImportRequest(BaseModel):
     path: str = ""
     paths: List[str] = Field(default_factory=list)
@@ -2455,6 +2435,9 @@ def get_comfy_history(comfy_address, prompt_id):
     except Exception as e:
         return {}
 
+def now_ms():
+    return int(time.time() * 1000)
+
 def canvas_path(canvas_id):
     cleaned = re.sub(r"[^a-zA-Z0-9_-]", "", canvas_id or "")
     if not cleaned:
@@ -2468,7 +2451,8 @@ def save_canvas(canvas):
             json.dump(canvas, f, ensure_ascii=False, indent=2)
 
 def normalize_canvas_kind(kind="classic"):
-    return "smart" if str(kind or "").strip().lower() == "smart" else "classic"
+    # 二开：smart 画布已移除，所有画布统一为 classic（旧 smart 数据保留在磁盘但不再展示）
+    return "classic"
 
 # ===== 项目（按项目分类管理画布）=====
 PROJECTS_PATH = os.path.join(DATA_DIR, "projects.json")
@@ -2634,7 +2618,7 @@ def iter_canvas_records(include_deleted=False):
     return records
 
 def list_canvases():
-    records = iter_canvas_records(include_deleted=False)
+    records = [r for r in iter_canvas_records(include_deleted=False) if (r.get("kind") or "classic") != "smart"]
     return sorted(
         records,
         key=lambda item: (
@@ -2644,7 +2628,7 @@ def list_canvases():
     )
 
 def list_deleted_canvases():
-    records = iter_canvas_records(include_deleted=True)
+    records = [r for r in iter_canvas_records(include_deleted=True) if (r.get("kind") or "classic") != "smart"]
     return sorted(records, key=lambda item: item["deleted_at"], reverse=True)
 
 def canvas_asset_url_value(value):
@@ -2754,8 +2738,8 @@ def extract_canvas_assets(canvas):
 def canvas_assets_index():
     canvases = []
     items = []
-    canvas_counts = {"all": 0, "smart": 0, "classic": 0}
-    item_counts = {"all": 0, "smart": 0, "classic": 0}
+    canvas_counts = {"all": 0, "classic": 0}
+    item_counts = {"all": 0, "classic": 0}
     cleanup_expired_canvas_trash()
     for filename in os.listdir(CANVAS_DIR):
         if not filename.endswith(".json"):
@@ -2766,6 +2750,8 @@ def canvas_assets_index():
         except Exception:
             continue
         if canvas.get("deleted_at"):
+            continue
+        if (canvas.get("kind") or "classic") == "smart":
             continue
         record = canvas_record(canvas)
         canvas_items = extract_canvas_assets(canvas)
@@ -2781,7 +2767,6 @@ def canvas_assets_index():
     items.sort(key=lambda item: int(item.get("canvas_updated_at") or item.get("created_at") or 0), reverse=True)
     categories = [
         {"id": "all", "name": "全部画布", "count": item_counts.get("all", 0), "canvas_count": canvas_counts.get("all", 0)},
-        {"id": "smart", "name": "智能画布", "count": item_counts.get("smart", 0), "canvas_count": canvas_counts.get("smart", 0)},
         {"id": "classic", "name": "普通画布", "count": item_counts.get("classic", 0), "canvas_count": canvas_counts.get("classic", 0)},
     ]
     return {"categories": categories, "canvases": canvases, "items": items}
@@ -10352,91 +10337,6 @@ def download_output(request: Request, url: str, name: str = "", inline: bool = F
 
     return StreamingResponse(stream_remote(), media_type=content_type, headers=headers, status_code=upstream.status_code)
 
-@app.post("/api/smart-canvas/minimax-export")
-async def export_minimax_timeline(payload: MiniMaxTimelineExportRequest):
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        raise HTTPException(status_code=500, detail="未找到 ffmpeg，无法导出完整剪辑")
-    clips = [clip for clip in (payload.clips or []) if clip.url]
-    if not clips:
-        raise HTTPException(status_code=400, detail="时间轴里还没有可导出的视频")
-    tmpdir = tempfile.mkdtemp(prefix="minimax_timeline_")
-    try:
-        clip_sources = []
-        for clip in clips:
-            src = output_file_from_url(clip.url)
-            if not src:
-                raise HTTPException(status_code=400, detail="完整剪辑导出只支持本地生成素材")
-            clip_sources.append(src)
-        ffprobe = shutil.which("ffprobe")
-        preserve_audio = bool(ffprobe)
-        if ffprobe:
-            for src in clip_sources:
-                probe_cmd = [
-                    ffprobe, "-v", "error", "-select_streams", "a:0",
-                    "-show_entries", "stream=index", "-of", "csv=p=0", src,
-                ]
-                probe = await asyncio.to_thread(subprocess.run, probe_cmd, capture_output=True, text=True, timeout=30)
-                if probe.returncode != 0 or not (probe.stdout or "").strip():
-                    preserve_audio = False
-                    break
-        part_paths = []
-        normalize_video = "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30"
-        for index, (clip, src) in enumerate(zip(clips, clip_sources)):
-            start = max(0.0, float(clip.start or 0))
-            end = float(clip.end or 0)
-            source_duration = max(0.0, float(clip.duration or 0))
-            if end <= start:
-                end = source_duration if source_duration > start else start + 0.1
-            trim_duration = max(0.1, end - start)
-            part_path = os.path.join(tmpdir, f"part_{index:03d}.mp4")
-            if preserve_audio:
-                cmd = [
-                    ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-                    "-ss", f"{start:.3f}", "-t", f"{trim_duration:.3f}", "-i", src,
-                    "-map", "0:v:0", "-map", "0:a:0", "-vf", normalize_video,
-                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-ar", "48000", "-ac", "2",
-                    "-movflags", "+faststart", part_path,
-                ]
-            else:
-                cmd = [
-                    ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-                    "-ss", f"{start:.3f}", "-t", f"{trim_duration:.3f}", "-i", src,
-                    "-f", "lavfi", "-t", f"{trim_duration:.3f}", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-                    "-map", "0:v:0", "-map", "1:a:0", "-vf", normalize_video, "-shortest",
-                    "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
-                    "-c:a", "aac", "-ar", "48000", "-ac", "2",
-                    "-movflags", "+faststart", part_path,
-                ]
-            proc = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, timeout=300)
-            if proc.returncode != 0:
-                raise HTTPException(status_code=500, detail=(proc.stderr or "视频裁剪失败").strip()[:300])
-            part_paths.append(part_path)
-        filename = sanitize_export_filename(payload.filename or "minimax-timeline.mp4", "minimax-timeline.mp4")
-        if not filename.lower().endswith(".mp4"):
-            filename += ".mp4"
-        output_path = output_path_for(filename, "output")
-        if len(part_paths) == 1:
-            shutil.copyfile(part_paths[0], output_path)
-        else:
-            concat_path = os.path.join(tmpdir, "concat.txt")
-            with open(concat_path, "w", encoding="utf-8") as fh:
-                for part in part_paths:
-                    safe_part = part.replace("\\", "/").replace("'", "'\\''")
-                    fh.write(f"file '{safe_part}'\n")
-            cmd = [
-                ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-                "-f", "concat", "-safe", "0", "-i", concat_path,
-                "-c", "copy", "-movflags", "+faststart", output_path,
-            ]
-            proc = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, text=True, timeout=300)
-            if proc.returncode != 0:
-                raise HTTPException(status_code=500, detail=(proc.stderr or "视频拼接失败").strip()[:300])
-        return {"url": output_url_for(filename, "output"), "name": filename, "kind": "video"}
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
 @app.post("/api/upload")
 async def upload_image(files: List[UploadFile] = File(...)):
     uploaded_files = []
@@ -14783,16 +14683,6 @@ async def list_canvas_assets():
     # （否则画布多时一次请求就会卡住整个 asyncio loop，连 WebSocket 一起掉线）。
     return await asyncio.to_thread(canvas_assets_index)
 
-@app.get("/api/smart-canvas/prompt-templates")
-async def smart_canvas_prompt_templates():
-    try:
-        template_path = prompt_template_markdown_path()
-        source = os.path.relpath(template_path, BASE_DIR).replace("\\", "/") if template_path else ""
-        return {"templates": builtin_prompt_templates(), "source": source}
-    except Exception as e:
-        print(f"读取提示词模板失败: {e}")
-        return {"templates": []}
-
 @app.post("/api/canvas-assets/check")
 async def check_canvas_assets(payload: CanvasAssetCheckRequest):
     result = {}
@@ -15068,54 +14958,6 @@ def smart_group_export_folder(folder: str, group_name: str) -> str:
         path = os.path.abspath(os.path.join(OUTPUT_DIR, "smart-groups", f"{safe_group}-{stamp}"))
     os.makedirs(path, exist_ok=True)
     return path
-
-@app.post("/api/smart-canvas/group-export")
-async def export_smart_canvas_group(payload: SmartCanvasGroupExportRequest):
-    target_dir = smart_group_export_folder(payload.folder, payload.group_name)
-    used_names = set()
-    count = 0
-    text_index = 1
-    for item in payload.items[:2000]:
-        kind = str(item.kind or "").lower()
-        if kind == "text":
-            text = str(item.text or "")
-            if not text.strip():
-                continue
-            base = sanitize_export_filename(item.name or f"{text_index}.txt", f"{text_index}.txt")
-            if not base.lower().endswith(".txt"):
-                base += ".txt"
-            text_index += 1
-            name, ext = os.path.splitext(base)
-            out_name = base
-            suffix = 2
-            while out_name in used_names:
-                out_name = f"{name}-{suffix}{ext}"
-                suffix += 1
-            used_names.add(out_name)
-            with open(os.path.join(target_dir, out_name), "w", encoding="utf-8") as f:
-                f.write(text)
-            count += 1
-            continue
-        src = output_file_from_url(item.url)
-        if not src or not os.path.isfile(src):
-            continue
-        base = sanitize_export_filename(item.name or os.path.basename(src), os.path.basename(src) or f"asset-{count + 1}")
-        name, ext = os.path.splitext(base)
-        if not ext:
-            _, src_ext = os.path.splitext(src)
-            ext = src_ext or ".bin"
-            base = name + ext
-        out_name = base
-        suffix = 2
-        while out_name in used_names:
-            out_name = f"{name}-{suffix}{ext}"
-            suffix += 1
-        used_names.add(out_name)
-        shutil.copy2(src, os.path.join(target_dir, out_name))
-        count += 1
-    if count <= 0:
-        raise HTTPException(status_code=404, detail="没有可导出的内容")
-    return {"ok": True, "folder": target_dir, "count": count}
 
 @app.get("/api/asset-library")
 async def get_asset_library():
