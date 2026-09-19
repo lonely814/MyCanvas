@@ -35,7 +35,7 @@ from io import BytesIO
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, UploadFile, File, Form, Header, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response, StreamingResponse, JSONResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel, Field
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -68,12 +68,82 @@ logging.getLogger("uvicorn.access").addFilter(QuietAccessLogFilter())
 
 app = FastAPI()
 
+# --- 访问控制（可选）---
+# 默认无鉴权，适合纯内网使用。设置 API_TOKEN 后：
+# - 所有 /api/*、/ws 要求携带令牌（浏览器访问 / 会先进入解锁页，令牌写入 Cookie，一次输入全站生效）
+# - 程序化调用可使用 Authorization: Bearer <token> 或 ?api_token=<token>
+# 公网部署建议反代层（Nginx/Caddy）再加一层 Basic Auth。
+API_TOKEN = os.getenv("API_TOKEN", "").strip()
+
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if os.getenv("ALLOWED_ORIGINS", "").strip() == "*":
+    _cors_origins = ["*"]
+else:
+    _cors_origins = ALLOWED_ORIGINS  # 默认空列表 = 不返回 CORS 头 = 仅同源可用
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+def _request_api_token(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip()
+    return request.query_params.get("api_token", "").strip()
+
+def _api_token_ok(request) -> bool:
+    if not API_TOKEN:
+        return True
+    if _request_api_token(request) == API_TOKEN:
+        return True
+    return request.cookies.get("ic_token", "") == API_TOKEN
+
+_UNLOCK_PAGE = """<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Infinite-Canvas 访问验证</title>
+<style>body{font-family:system-ui,sans-serif;background:#0f1115;color:#e8e8ea;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+.card{background:#181b22;padding:32px;border-radius:14px;width:min(360px,90vw)}
+input{width:100%;box-sizing:border-box;padding:10px;margin:14px 0;border-radius:8px;border:1px solid #2c2f38;background:#0f1115;color:#e8e8ea;font-size:14px}
+button{width:100%;padding:10px;border:0;border-radius:8px;background:#6366f1;color:#fff;font-size:14px;cursor:pointer}
+.err{color:#f87171;font-size:12px;min-height:16px}</style></head>
+<body><div class="card"><h3 style="margin:0 0 6px">访问验证</h3>
+<p style="font-size:12px;color:#8f9aab;margin:0">本服务已开启令牌保护，请输入访问令牌。</p>
+<form id="f"><input id="t" type="password" placeholder="访问令牌" autofocus><div class="err" id="e"></div>
+<button type="submit">进入</button></form></div>
+<script>document.getElementById('f').addEventListener('submit',async ev=>{ev.preventDefault();
+const r=await fetch('/api/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:document.getElementById('t').value})});
+if(r.ok){location.replace('/');}else{document.getElementById('e').textContent='令牌不正确，请重试';}});</script></body></html>"""
+
+if API_TOKEN:
+    @app.post("/api/unlock")
+    async def api_unlock(request: Request):
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid body")
+        if str(payload.get("token") or "").strip() != API_TOKEN:
+            raise HTTPException(status_code=401, detail="token 不正确")
+        response = JSONResponse({"ok": True})
+        response.set_cookie("ic_token", API_TOKEN, max_age=30 * 24 * 3600, httponly=True, samesite="lax")
+        return response
+
+    @app.middleware("http")
+    async def api_token_guard(request: Request, call_next):
+        path = request.url.path
+        if path in ("/api/unlock", "/healthz", "/favicon.ico"):
+            return await call_next(request)
+        if _api_token_ok(request):
+            return await call_next(request)
+        if path == "/" or (path.startswith("/static/") and path.endswith(".html")):
+            return HTMLResponse(_UNLOCK_PAGE, status_code=401)
+        return JSONResponse({"detail": "Unauthorized"}, status_code=401)
+
+@app.get("/healthz")
+def healthz():
+    return {"ok": True}
 
 # --- WebSocket 状态管理器 ---
 class ConnectionManager:
@@ -187,6 +257,11 @@ async def startup_event():
 
 @app.websocket("/ws/stats")
 async def websocket_endpoint(websocket: WebSocket, client_id: str = None):
+    if API_TOKEN:
+        token = websocket.query_params.get("api_token", "").strip() or websocket.cookies.get("ic_token", "")
+        if token != API_TOKEN:
+            await websocket.close(code=4401)
+            return
     await manager.connect(websocket, client_id)
     try:
         while True:
@@ -17081,5 +17156,5 @@ if __name__ == "__main__":
     # 关闭服务端协议级 WebSocket ping：部分客户端（如 PS UXP 面板）不会自动回 pong，
     # 默认 20s ping/20s 超时会把这些连接每隔一会儿就踢掉造成"频繁断连"。
     # 客户端有自己的应用层心跳 + 断线重连兜底，这里禁用协议 ping 更稳。
-    uvicorn.run(app, host="0.0.0.0", port=3000,
+    uvicorn.run(app, host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", "3000")),
                 ws_ping_interval=None, ws_ping_timeout=None)

@@ -1,0 +1,31 @@
+# Infinite-Canvas systemd 服务单元
+#
+# 安装（假设项目部署在 /opt/infinite-canvas，运行用户为 app）：
+#   sudo useradd -r -s /usr/sbin/nologin app || true
+#   sudo chown -R app:app /opt/infinite-canvas
+#   cd /opt/infinite-canvas && sudo -u app ./start.sh   # 先手动跑一次生成 .venv
+#   sudo cp deploy/infinite-canvas.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now infinite-canvas
+#
+# 查看日志: journalctl -u infinite-canvas -f
+
+[Unit]
+Description=Infinite-Canvas AI Canvas Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=app
+Group=app
+WorkingDirectory=/opt/infinite-canvas
+ExecStart=/opt/infinite-canvas/.venv/bin/python main.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+# 环境变量（API_TOKEN、PORT 等）建议写入独立文件，取消下行注释：
+#EnvironmentFile=/etc/infinite-canvas.env
+
+[Install]
+WantedBy=multi-user.target
