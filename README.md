@@ -15,7 +15,10 @@
 
 ## 架构
 
-- 后端：Python 3.10+ / FastAPI，单文件 `main.py`（后续计划拆分为 `app/` 包）
+- 后端：Python 3.10+ / FastAPI，模块化包结构：
+  - `main.py` — 薄入口（FastAPI 实例、中间件、静态挂载、include_router）
+  - `app/core.py` — 配置常量、运行时状态、共享辅助函数与各渠道协议适配
+  - `app/routers/` — 按域拆分的路由（misc/storage/assets/comfyui/runninghub/cli/providers/generation/canvases/prompt_lib）
 - 前端：无构建原生 HTML/JS（`static/`），第三方库本地化于 `static/vendor/`
 - 存储：纯 JSON 文件 + 文件系统（`data/`、`API/.env`、`output/`、`assets/`），无数据库
 - 实时通知：WebSocket `/ws/stats`（在线人数 / 画布更新广播）
