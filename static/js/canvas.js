@@ -233,6 +233,7 @@ function applyLanguage(lang){
     }
     renderCanvasList();
     // 语言只影响文案、不体现在节点数据里，必须强制整体重建才能刷新节点内的文字
+    renderToolbarNodeButtons();  // 工具栏按钮名称同样来自 i18n
     forceFullRender();
 }
 async function refreshCanvasConfigFromSettings(){
@@ -3283,11 +3284,19 @@ function addOutputNode(point){
 function openCreateMenu(clientX, clientY){
     menuPoint = screenToWorld(clientX, clientY);
     closeLinkCreateMenu();
+    renderCreateMenu('');  // 每次打开重建：语言切换后名称与分组标题才会跟着变
+    const search = document.getElementById('createMenuSearch');
+    if(search) search.value = '';
     createMenu.style.left = `${clientX}px`;
     createMenu.style.top = `${clientY}px`;
     createMenu.classList.add('open');
-    refreshIcons();
+    refreshIconsWithin(createMenu);
+    // 打开即聚焦搜索框，键盘可直接筛类型
+    if(search) setTimeout(() => search.focus(), 0);
 }
+document.getElementById('createMenuSearch')?.addEventListener('input', e => {
+    renderCreateMenu(e.target.value);
+});
 function closeCreateMenu(){
     createMenu.classList.remove('open');
     closeLinkCreateMenu();
@@ -3688,21 +3697,92 @@ function createNodeByType(type, point){
     if(type === 'output') return addOutputNode(point);
     return null;
 }
+/* ==== 节点类型注册表（唯一数据源）====
+   工具栏、右键新建菜单、连线菜单、端口菜单全部由此生成，避免多处硬编码各自漂移
+   （历史问题：工具栏写「上传」、菜单写「上传节点」；工具栏有分组菜单没有、菜单有 Midjourney 工具栏没有）。
+   label 统一用同一个 i18n 键；group 决定菜单里的分组小标题。 */
+const NODE_TYPES = [
+    { type:'image',       labelKey:'canvas.imageCard',        label:'上传节点',      icon:'image-plus',          group:'base',    fn:'addImageNode' },
+    { type:'prompt',      labelKey:'canvas.prompt',           label:'提示词',        icon:'text-cursor-input',   group:'base',    fn:'addPromptNode' },
+    { type:'loop',        labelKey:'canvas.loopNode',         label:'循环节点',      icon:'repeat-2',            group:'base',    fn:'addLoopNode' },
+    { type:'llm',         labelKey:'canvas.llmNode',          label:'LLM 节点',      icon:'message-square-text', group:'base',    fn:'addLLMNode' },
+    { type:'generator',   labelKey:'canvas.apiGenerate',      label:'API生成',       icon:'wand-sparkles',       group:'image',   fn:'addGeneratorNode' },
+    { type:'msgen',       labelKey:'canvas.modelscopeGenerate', label:'Modelscope生成', icon:'cloud-lightning',  group:'image',   fn:'addMsGenNode' },
+    { type:'midjourney',  labelKey:'',                        label:'Midjourney',    icon:'panel-top',           group:'image',   fn:'addMidjourneyNode' },
+    { type:'video',       labelKey:'canvas.videoGenerateNode', label:'视频生成',     icon:'clapperboard',        group:'video',   fn:'addVideoNode' },
+    { type:'minimax',     labelKey:'',                        label:'MiniMax H3',    icon:'sparkles',            group:'video',   fn:'addMiniMaxNode' },
+    { type:'ltxDirector', labelKey:'canvas.ltxDirector',      label:'LTX Director',  icon:'film',                group:'video',   fn:'addLTXDirectorNode' },
+    { type:'rh',          labelKey:'canvas.rhGenerate',       label:'RunningHub生成', icon:'workflow',           group:'flow',    fn:'addRhNode' },
+    { type:'comfy',       labelKey:'canvas.comfyGenerate',    label:'ComfyUI 生成',  icon:'workflow',            group:'flow',    fn:'addComfyNode' },
+    { type:'output',      labelKey:'',                        label:'Output',        icon:'circle-dot',          group:'flow',    fn:'addOutputNode' },
+];
+const NODE_GROUP_LABELS = {
+    base:  { zh:'基础',   en:'Basic' },
+    image: { zh:'图像生成', en:'Image' },
+    video: { zh:'视频生成', en:'Video' },
+    flow:  { zh:'工作流',  en:'Workflow' },
+};
+// 分组标题（中英随界面语言切换）
+function nodeGroupLabel(group){
+    const g = NODE_GROUP_LABELS[group];
+    return g ? (langIsEn() ? g.en : g.zh) : group;
+}
+// 节点类型的中文/英文显示名：有 i18n 键就查表，否则用注册表里的 label
+function nodeTypeLabel(item){
+    return item.labelKey ? tr(item.labelKey) : item.label;
+}
+
+// 生成右键新建菜单：按注册表分组渲染；有关键词时按名称过滤，隐藏空分组
+function renderCreateMenu(keyword){
+    const list = document.getElementById('createMenuList');
+    if(!list) return;
+    const kw = String(keyword || '').trim().toLowerCase();
+    const match = item => !kw || nodeTypeLabel(item).toLowerCase().includes(kw) || item.type.toLowerCase().includes(kw);
+    let html = '';
+    let shown = 0;
+    ['base','image','video','flow'].forEach(group => {
+        const items = NODE_TYPES.filter(t => t.group === group && match(t));
+        if(!items.length) return;
+        html += `<div class="menu-section-title">${escapeHtml(nodeGroupLabel(group))}</div>`;
+        html += items.map(item => {
+            shown++;
+            return `<button class="menu-btn" data-node-type="${escapeAttr(item.type)}"><i data-lucide="${escapeAttr(item.icon)}" class="w-4 h-4"></i><span>${escapeHtml(nodeTypeLabel(item))}</span></button>`;
+        }).join('');
+    });
+    if(!shown) html = '<div class="create-menu-empty">没有匹配的节点</div>';
+    list.innerHTML = html;
+    list.querySelectorAll('[data-node-type]').forEach(btn => {
+        btn.onclick = e => { e.stopPropagation(); menuAdd(btn.dataset.nodeType); };
+    });
+    refreshIconsWithin(list);
+}
+
+// 生成工具栏的新建节点按钮（与右键菜单同源，补齐历史上缺失的 Midjourney）
+function renderToolbarNodeButtons(){
+    const box = document.querySelector('#quickToolbar .toolbar-items');
+    if(!box) return;
+    box.innerHTML = NODE_TYPES.map(item =>
+        `<button class="tool-btn" data-node-type="${escapeAttr(item.type)}" title="${escapeAttr(nodeTypeLabel(item))}"><i data-lucide="${escapeAttr(item.icon)}" class="w-4 h-4"></i><span>${escapeHtml(nodeTypeLabel(item))}</span></button>`
+    ).join('') + `<button class="tool-btn" onclick="groupSelectedImages()" title="${escapeAttr(tr('canvas.group'))}"><i data-lucide="group" class="w-4 h-4"></i><span>${escapeHtml(tr('canvas.group'))}</span></button>`;
+    box.querySelectorAll('[data-node-type]').forEach(btn => {
+        btn.onclick = () => addNodeByType(btn.dataset.nodeType);
+    });
+    refreshIconsWithin(box);
+}
+
+// 按注册表里的函数名调用对应的 add 函数，传入落点坐标
+function addNodeByType(type, point){
+    const item = NODE_TYPES.find(t => t.type === type);
+    if(!item) return false;
+    const fn = window[item.fn];
+    if(typeof fn !== 'function'){ console.warn('[canvas] 缺少节点构造函数:', item.fn); return false; }
+    fn(point);
+    return true;
+}
+
 function menuAdd(type){
     closeCreateMenu();
-    if(type === 'image') addImageNode(menuPoint);
-    if(type === 'prompt') addPromptNode(menuPoint);
-    if(type === 'loop') addLoopNode(menuPoint);
-    if(type === 'llm') addLLMNode(menuPoint);
-    if(type === 'generator') addGeneratorNode(menuPoint);
-    if(type === 'midjourney') addMidjourneyNode(menuPoint);
-    if(type === 'msgen') addMsGenNode(menuPoint);
-    if(type === 'video') addVideoNode(menuPoint);
-    if(type === 'minimax') addMiniMaxNode(menuPoint);
-    if(type === 'rh') addRhNode(menuPoint);
-    if(type === 'comfy') addComfyNode(menuPoint);
-    if(type === 'ltxDirector') addLTXDirectorNode(menuPoint);
-    if(type === 'output') addOutputNode(menuPoint);
+    addNodeByType(type, menuPoint);
 }
 function mediaKindForUpload(file){
     const type = String(file?.type || '').toLowerCase();
@@ -16218,6 +16298,7 @@ function escapeHtml(str){ return String(str == null ? '' : str).replace(/[&<>"']
 function escapeAttr(str){ return escapeHtml(str); }
 
 window.onload = async () => {
+    renderToolbarNodeButtons();  // 工具栏节点按钮由 NODE_TYPES 生成（与右键菜单同源）
     applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'light');
     applyQuickToolbarState();
     if(window.StudioI18n) StudioI18n.apply();
