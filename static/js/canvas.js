@@ -3770,6 +3770,30 @@ function renderToolbarNodeButtons(){
     refreshIconsWithin(box);
 }
 
+
+// 空画布引导：没有节点时提示如何开始（批次3）。挂一次，之后随节点数切换显隐。
+function syncCanvasEmptyGuide(){
+    if(!board) return;
+    let el = document.getElementById('canvasEmptyGuide');
+    const isEmpty = !canvas || !(nodes && nodes.length);
+    if(!canvas){ if(el) el.remove(); return; }
+    if(!isEmpty){ if(el) el.remove(); return; }
+    if(el) return;
+    el = document.createElement('div');
+    el.id = 'canvasEmptyGuide';
+    el.className = 'canvas-empty-guide';
+    el.innerHTML = `
+        <div class="ceg-icon"><i data-lucide="layout-grid"></i></div>
+        <div class="ceg-title">${escapeHtml(langIsEn() ? 'Empty canvas' : '空白画布')}</div>
+        <div class="ceg-tips">
+            ${langIsEn()
+                ? 'Double-click the canvas or right-click to add a node<br>Drag images here to upload'
+                : '双击画布空白处 / 右键 新建节点<br>拖入图片可直接上传'}
+        </div>`;
+    board.appendChild(el);
+    refreshIconsWithin(el);
+}
+
 // 按注册表里的函数名调用对应的 add 函数，传入落点坐标
 function addNodeByType(type, point){
     const item = NODE_TYPES.find(t => t.type === type);
@@ -6152,6 +6176,7 @@ function render(){
         measureCanvasOriginalImageNodes(nodesEl);
     }
     refreshOutputTimer();
+    syncCanvasEmptyGuide();
 }
 function refreshNodes(ids=[]){
     const uniqueIds = [...new Set((ids || []).filter(Boolean))];
@@ -6351,7 +6376,7 @@ function renderNode(node){
         const label = { queued:'排队中', running:'运行中', done:'完成', failed:'失败' }[node.runStatus] || '';
         return `<span class="node-run-status ${node.runStatus}"><span class="dot"></span>${escapeHtml(label)}${node._cascadeIdx?' '+node._cascadeIdx:''}</span>`;
     })() : '';
-    el.innerHTML = `<div class="node-head"><span class="node-title">${displayTitle}</span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton('${node.id}', event)" class="text-gray-300 hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
+    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton('${node.id}', event)" class="text-gray-300 hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
     const body = document.createElement('div');
     body.className = 'node-body';
     if(node.type === 'image') {

@@ -1589,3 +1589,66 @@ html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .tool
         margin-left:0;
     }
 }
+
+/* ==== 批次3：节点视觉重设计（对齐 libtv 的克制风格）====
+   思路：压平（去重阴影、改细描边）、收色（类型色只用在左侧色条与头部圆点）、
+   分层（头部薄、内容区与操作区靠间距分隔）。追加覆盖而非改写原规则，
+   便于逐条比对回退。 */
+/* 类型色：按 renderNode 生成的 <type>-node 类名映射到 token */
+.node { --node-accent:#64748b; }
+.node.image-node      { --node-accent:var(--node-image); }
+.node.prompt-node     { --node-accent:var(--node-prompt); }
+.node.loop-node       { --node-accent:var(--node-loop); }
+.node.llm-node        { --node-accent:var(--node-llm); }
+.node.generator-node  { --node-accent:var(--node-generator); }
+.node.video-node      { --node-accent:var(--node-video); }
+.node.minimax-node    { --node-accent:var(--node-minimax); }
+.node.rh-node         { --node-accent:var(--node-rh); }
+.node.comfy-node      { --node-accent:var(--node-comfy); }
+.node.ltxDirector-node{ --node-accent:var(--node-ltx); }
+.node.midjourney-node { --node-accent:var(--node-mj); }
+.node.msgen-node      { --node-accent:var(--node-msgen); }
+.node.output-node     { --node-accent:var(--node-output); }
+.node.group-node,
+.node.promptGroup-node{ --node-accent:var(--node-group); }
+
+/* 1) 压平卡片：小圆角 + 细描边 + 极轻阴影（原来是 22px 圆角 + 大范围投影） */
+.node { border-radius:var(--r-lg); border:1px solid var(--line); box-shadow:var(--shadow-card); }
+.node:hover { border-color:var(--line-2); }
+/* 左侧类型色条：3px 内嵌，扫视时一眼分辨类型 */
+.node::after { content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:0 3px 3px 0; background:var(--node-accent); opacity:.85; pointer-events:none; }
+.node.has-image::after { opacity:1; }
+
+/* 2) 头部收薄：42px -> 34px，去掉粗分隔，类型圆点带色 */
+.node-head { height:34px; flex:0 0 34px; padding:0 10px 0 12px; border-bottom:1px solid var(--line); border-radius:13px 13px 0 0; }
+.node-head-left { display:flex; align-items:center; gap:7px; min-width:0; }
+.node-type-dot { flex:0 0 auto; width:7px; height:7px; border-radius:99px; background:var(--node-accent); }
+.node-title { font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* 3) 选中态：改用描边高亮 + 细环，不再叠 outline（原来 outline 与阴影同时出现，边界糊） */
+.node.selected { outline:none; border-color:var(--accent); box-shadow:var(--shadow-selected); }
+.node.selected .node-title { color:var(--text); }
+
+/* 4) 端口：常显细描边、可点区域更大、悬停放大 */
+.port::after { border:2px solid var(--card-solid); background:var(--muted); box-shadow:0 0 0 1px var(--line-2); transition:transform .14s var(--ease), background-color .14s var(--ease); }
+.node:hover .port::after { background:var(--node-accent); }
+.port:hover::after { transform:scale(1.3); background:var(--accent); }
+
+/* 5) 运行状态徽章：降饱和、统一圆角，避免与类型色打架 */
+.node-run-status { border-radius:var(--r-sm); font-weight:800; }
+.node-run-status.queued  { background:var(--soft-2); color:var(--muted); }
+.node-run-status.running { background:var(--accent-soft); color:var(--accent); }
+.node-run-status.failed  { background:rgba(220,38,38,.12); color:var(--danger); }
+
+/* 6) 内容区与操作区用间距分层（不再处处描边分隔） */
+.node-body { padding:var(--sp-3); }
+
+/* 7) 空画布引导：没有节点时提示如何开始 */
+.canvas-empty-guide { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; flex-direction:column; align-items:center; gap:10px; text-align:center; pointer-events:none; user-select:none; z-index:1; }
+.canvas-empty-guide .ceg-icon { width:44px; height:44px; border-radius:var(--r-lg); display:grid; place-items:center; background:var(--soft-2); color:var(--faint); }
+.canvas-empty-guide .ceg-icon svg { width:22px; height:22px; }
+.canvas-empty-guide .ceg-title { color:var(--text); font-size:14px; font-weight:800; opacity:.72; }
+.canvas-empty-guide .ceg-tips { color:var(--faint); font-size:12px; font-weight:600; line-height:1.9; }
+.canvas-empty-guide kbd { display:inline-block; min-width:18px; padding:1px 5px; margin:0 2px; border:1px solid var(--line-2); border-radius:5px; background:var(--card-solid); color:var(--muted); font-family:inherit; font-size:11px; font-weight:800; }
+
+/* ==== 批次3 结束 ==== */
