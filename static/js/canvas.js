@@ -353,6 +353,66 @@ let deletedCanvases = [];
 let canvas = null;
 let nodes = [];
 let connections = [];
+
+// 性能：节点 id 索引与 DOM 元素索引。
+// 节点多时，热路径（renderLinks / 小地图 / 连线悬停）里原来的 nodes.find(...) 与
+// nodesEl.querySelector('.node[data-id=...]') 都是 O(N) 线性查找，逐节点调用后整体退化为 O(N²)。
+// 这里各建一次索引，把每次查找降到 O(1)。
+// ponytail: 用长度比对判断失效，覆盖增删节点；结构性变更后 render() 会显式失效重建。
+let nodeIndexCache = null;
+let nodeIndexCacheSrc = null;
+let nodeElIndexCache = null;
+let nodeElIndexCacheSize = -1;
+function invalidateNodeIndex(){
+    nodeIndexCache = null;
+    nodeIndexCacheSrc = null;
+    nodeElIndexCache = null;
+    nodeElIndexCacheSize = -1;
+}
+function nodeById(id){
+    // 数组被整体替换（如 nodes = nodes.filter(...)）或长度变化时重建；原地修改节点属性不受影响，
+    // 因为 Map 里存的是同一批对象引用。
+    if(!nodeIndexCache || nodeIndexCacheSrc !== nodes || nodeIndexCache.size !== nodes.length){
+        nodeIndexCache = new Map(nodes.map(n => [n.id, n]));
+        nodeIndexCacheSrc = nodes;
+    }
+    return nodeIndexCache.get(id) || null;
+}
+function nodeElById(id){
+    if(!nodeElIndexCache || nodeElIndexCacheSize !== nodesEl.childElementCount){
+        nodeElIndexCache = new Map();
+        nodesEl.querySelectorAll('.node').forEach(el => {
+            if(el.dataset?.id) nodeElIndexCache.set(el.dataset.id, el);
+        });
+        nodeElIndexCacheSize = nodesEl.childElementCount;
+    }
+    return nodeElIndexCache.get(id) || null;
+}
+
+// 性能：端口世界坐标缓存。原来"连线悬停"每次 mousemove 对每条连线取 2 个端点坐标，
+// 每次都要 getBoundingClientRect（强制同步布局）→ 2C 次 reflow/帧，鼠标划过就卡。
+// 端口坐标只在视口/节点几何变化时才会变，因此缓存并在这些时机清空：
+// 每帧的悬停检测退化为纯数学计算（O(C) 次 Map 查询 + 采样，零布局读取）。
+let portPointCache = new Map();
+let portPointClearQueued = false;
+function invalidatePortPoints(){
+    portPointCache.clear();
+}
+// 缓存按帧失效：同一帧内多次查询复用结果（连线的两个端点、多帧之间的重复查询），
+// 下一帧重新读取，保证图片加载/布局变化后连线位置仍然准确。
+function schedulePortPointClear(){
+    if(portPointClearQueued) return;
+    portPointClearQueued = true;
+    requestAnimationFrame(() => {
+        portPointClearQueued = false;
+        portPointCache.clear();
+    });
+}
+// 节点几何（位置/尺寸/DOM 结构）变化后，索引与端口坐标缓存一起失效。
+function invalidateGeometryCaches(){
+    invalidateNodeIndex();
+    invalidatePortPoints();
+}
 let viewport = {x: -1800, y: -1000, scale: 1};
 let dragNode = null;
 let dragBoard = null;
@@ -1199,10 +1259,13 @@ function applyViewport(){
     scheduleCanvasImageResolutionSync(nodesEl, 120);
 }
 function estimatedNodeRect(n){
-    const el = nodesEl?.querySelector?.(`.node[data-id="${CSS.escape(n.id)}"]`);
+    // 性能：小地图每次重绘都会问每个节点的尺寸。原来这里做 nodesEl.querySelector(...)（O(N) 子树查询）
+    // 再读 offsetWidth/offsetHeight（强制同步布局），逐节点调用即 O(N²) 查询 + N 次 reflow，节点一多
+    // 平移/缩放就掉帧。改为首选节点模型上的 w/h，其次用 DOM 索引里已缓存元素的 offsetWidth。
     const size = defaultNodeSize(n.type);
-    const w = el?.offsetWidth || n.w || size.w || 260;
-    const h = el?.offsetHeight || n.h || size.h || 160;
+    const el = nodeElById(n.id);
+    const w = n.w || (el?.offsetWidth) || size.w || 260;
+    const h = n.h || (el?.offsetHeight) || size.h || 160;
     return {x:n.x || 0, y:n.y || 0, w, h};
 }
 function currentWorldViewRect(){
@@ -5931,8 +5994,11 @@ function render(){
     const outputScrolls = captureOutputScrolls();
     const mediaStates = captureMediaPlaybackStates();
     const reusableMediaNodes = new Map();
+    // 性能：原来在 querySelectorAll('.node').forEach 里对每个元素做 nodes.find(...)，整体 O(N²)。
+    // 这里先用一次 O(N) 索引替换，节点多时 render() 的耗时从平方级降到线性级。
+    const nodeByIdMap = new Map(nodes.map(n => [n.id, n]));
     nodesEl.querySelectorAll('.node').forEach(el => {
-        const node = nodes.find(n => n.id === el.dataset.id);
+        const node = nodeByIdMap.get(el.dataset.id);
         if(nodeHasLiveMedia(node)) reusableMediaNodes.set(node.id, el);
     });
     applyViewport();
@@ -5956,6 +6022,7 @@ function render(){
     });
     restoreMediaPlaybackStates(mediaStates);
     restoreOutputScrolls(outputScrolls);
+    invalidateGeometryCaches();  // DOM 已重建，索引与端口坐标必须失效
     refreshGeometry();
     refreshGeometryAfterLayout();
     refreshIcons();
@@ -5992,6 +6059,7 @@ function refreshNodes(ids=[]){
     refreshIcons();
     bindCanvasPreviewImageFallbacks(nodesEl);
     syncCanvasSelectedImageResolution(nodesEl);
+    invalidateGeometryCaches();  // 节点 DOM 已重建，索引与端口坐标缓存失效
     measureCanvasOriginalImageNodes(nodesEl);
     refreshOutputTimer();
 }
@@ -14723,7 +14791,7 @@ function startSelectionLink(e, kind){
     e.stopPropagation();
     const p = screenToWorld(e.clientX, e.clientY);
     tempLink = {from:`selection:${kind}`, x1:p.x, y1:p.y, x2:p.x, y2:p.y};
-    window.onmousemove = e2 => { const next = screenToWorld(e2.clientX, e2.clientY); tempLink.x2 = next.x; tempLink.y2 = next.y; renderLinks(); };
+    window.onmousemove = e2 => { const next = screenToWorld(e2.clientX, e2.clientY); tempLink.x2 = next.x; tempLink.y2 = next.y; scheduleLinksRender(); };
     window.onmouseup = e2 => {
         const targetPort = nearestPort(e2.clientX, e2.clientY, 'in');
         const target = targetPort?.closest('.generator-node');
@@ -15154,6 +15222,7 @@ function onNodeDrag(e){
             childEl.style.top = `${childDrag.node.y}px`;
         }
     });
+    invalidatePortPoints();  // 节点位置变了，端口世界坐标缓存失效
     scheduleLinksRender();
     renderSelectionHub();
     if(workflowTransferModal?.classList.contains('open')) updateWorkflowTransferMeta();
@@ -15188,6 +15257,7 @@ function onNodeResize(e){
         el.style.width = `${resizeNode.node.w}px`;
         el.style.height = `${resizeNode.node.h}px`;
     }
+    invalidatePortPoints();  // 节点尺寸变了，端口世界坐标缓存失效
     scheduleLinksRender();
     renderSelectionHub();
     scheduleMinimapRender();
@@ -15202,7 +15272,7 @@ function startLink(e, originId, originKind){
         const p = screenToWorld(e2.clientX, e2.clientY);
         tempLink.x2 = p.x;
         tempLink.y2 = p.y;
-        renderLinks();
+        scheduleLinksRender();
     };
     window.onmouseup = e2 => {
         const targetKind = originKind === 'out' ? 'in' : 'out';
@@ -15524,23 +15594,35 @@ function updateGroupMembership(movedNodes){
 }
 
 function portPoint(id, kind){
-    const n = nodes.find(x => x.id === id);
+    const n = nodeById(id);
     if(!n) return {x:0,y:0};  // 真正的孤儿连线（节点已删除）：renderLinks 会跳过它
-    const el = nodesEl.querySelector(`.node[data-id="${CSS.escape(id)}"]`);
+    // 性能：端口返回的是"世界坐标"，只取决于节点几何（位置/尺寸）与 DOM 布局，与视口无关。
+    // 缓存后，"连线悬停"每次 mousemove 不再为每条连线读 2 次 getBoundingClientRect
+    // （原实现为 2C 次强制同步布局/帧，鼠标划过即卡）。缓存由 invalidatePortPoints() 在
+    // 渲染、拖动、缩放、视口变化时清空。
+    const key = `${id}|${kind}`;
+    const cached = portPointCache.get(key);
+    if(cached) return cached;
+    const el = nodeElById(id);
     const port = el?.querySelector(`.port.${kind}`);
+    let point;
     if(port){
         const r = port.getBoundingClientRect();
-        return screenToWorld(r.left + r.width / 2, r.top + r.height / 2);
+        point = screenToWorld(r.left + r.width / 2, r.top + r.height / 2);
+    } else {
+        // 没有 DOM（节点渲染失败被跳过）或没找到端口时，用节点存储的几何坐标兜底，
+        // 让连线仍画在节点附近，而不是落到 (0,0) 或干脆消失。
+        const w = (el?.offsetWidth) || n.w || 260, h = (el?.offsetHeight) || n.h || 160;
+        const nx = Number(n.x) || 0, ny = Number(n.y) || 0;
+        point = kind === 'out' ? {x:nx + w, y:ny + h / 2} : {x:nx, y:ny + h / 2};
     }
-    // 没有 DOM（节点渲染失败被跳过）或没找到端口时，用节点存储的几何坐标兜底，
-    // 让连线仍画在节点附近，而不是落到 (0,0) 或干脆消失。
-    const w = (el?.offsetWidth) || n.w || 260, h = (el?.offsetHeight) || n.h || 160;
-    const nx = Number(n.x) || 0, ny = Number(n.y) || 0;
-    return kind === 'out' ? {x:nx + w, y:ny + h / 2} : {x:nx, y:ny + h / 2};
+    portPointCache.set(key, point);
+    schedulePortPointClear();
+    return point;
 }
 function canResolvePort(id){
     // 只跳过“真正的孤儿连线”（端点节点已不存在）；节点存在但暂时没 DOM 的，portPoint 会用几何坐标兜底。
-    return Boolean(nodes.find(x => x.id === id));
+    return Boolean(nodeById(id));
 }
 function renderLinks(){
     linksEl.innerHTML = '';
@@ -15761,7 +15843,7 @@ function continueKnifeDrag(e){
     knifePoint = point;
     knifeTrail.push(point);
     if(knifeTrail.length > 120) knifeTrail = knifeTrail.slice(-120);
-    renderLinks();
+    scheduleLinksRender();
 }
 function isEditableTarget(target){
     const tag = target?.tagName;
@@ -15895,7 +15977,7 @@ board.onwheel = e => {
     viewport.x = e.clientX - rect.left - before.x * viewport.scale;
     viewport.y = e.clientY - rect.top - before.y * viewport.scale;
     applyViewport();
-    renderLinks();
+    scheduleLinksRender();  // 性能：原来同步全量重建连线（每条 2 次 rect 读取），滚轮连续触发即掉帧
     renderSelectionHub();
     scheduleViewportSave();
 };
