@@ -2519,7 +2519,9 @@ def canvas_record(data):
         "id": data.get("id"),
         "title": data.get("title", "未命名画布"),
         "icon": data.get("icon", "🧩"),
-        "kind": normalize_canvas_kind(data.get("kind")),
+        // 保留原始 kind：list_canvases/画布资产索引据此过滤掉已移除的 smart 画布。
+        // 若在此处归一化成 classic，过滤条件将永远不成立（历史 bug）。
+        "kind": str(data.get("kind") or "classic").strip().lower() or "classic",
         "owner": str(data.get("owner") or "")[:40],
         "color": normalize_canvas_color(data.get("color")),
         "pinned": bool(data.get("pinned") or False),
