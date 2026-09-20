@@ -3697,6 +3697,64 @@ function createNodeByType(type, point){
     if(type === 'output') return addOutputNode(point);
     return null;
 }
+/* ==== 批次4：交互打磨 ==== */
+// 悬停节点时高亮与其相连的线。悬停态单独记录，不写进 selected（避免影响选中逻辑）。
+let hoveredNodeId = '';
+const shortcutHelpEl = () => document.getElementById('shortcutHelp');
+
+// 事件委托：render() 会重建节点 DOM，委托在容器上才不会随重建失效
+function installNodeHoverHighlight(){
+    if(!nodesEl || nodesEl.dataset.hoverBound === '1') return;
+    nodesEl.dataset.hoverBound = '1';
+    nodesEl.addEventListener('mouseover', e => {
+        const el = e.target.closest?.('.node');
+        const id = el?.dataset?.id || '';
+        if(id === hoveredNodeId) return;
+        hoveredNodeId = id;
+        scheduleLinksRender();
+    });
+    nodesEl.addEventListener('mouseleave', () => {
+        if(!hoveredNodeId) return;
+        hoveredNodeId = '';
+        scheduleLinksRender();
+    });
+}
+
+// 常用快捷键：Ctrl/Cmd+A 全选、Delete 删除选中、Ctrl/Cmd+0 复位缩放、? 显示帮助
+function installCanvasShortcuts(){
+    if(window.__canvasShortcutsBound) return;
+    window.__canvasShortcutsBound = true;
+    window.addEventListener('keydown', e => {
+        const t = e.target;
+        if(t && (t.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]'))) return;
+        if(!canvas) return;
+        const meta = e.ctrlKey || e.metaKey;
+        if(meta && String(e.key).toLowerCase() === 'a'){
+            e.preventDefault();
+            selected = new Set((nodes || []).map(n => n.id));
+            refreshSelectionVisuals();
+            return;
+        }
+        if(meta && e.key === '0'){
+            e.preventDefault();
+            viewport.scale = 1;
+            applyViewport();
+            scheduleLinksRender();
+            return;
+        }
+        if((e.key === 'Delete' || e.key === 'Backspace') && selected.size){
+            e.preventDefault();
+            deleteSelectedNodes();
+            return;
+        }
+        if(e.key === '?' && !meta){
+            const el = shortcutHelpEl();
+            if(el) el.hidden = !el.hidden;
+        }
+    });
+}
+/* ==== 批次4 结束 ==== */
+
 /* ==== 节点类型注册表（唯一数据源）====
    工具栏、右键新建菜单、连线菜单、端口菜单全部由此生成，避免多处硬编码各自漂移
    （历史问题：工具栏写「上传」、菜单写「上传节点」；工具栏有分组菜单没有、菜单有 Midjourney 工具栏没有）。
@@ -15786,7 +15844,7 @@ function renderLinks(){
         segments.push({c, a:portPoint(c.from, 'out'), b:portPoint(c.to, 'in')});
     });
     segments.forEach(({c, a, b}) => {
-        const relClass = isConnectionSelected(c) ? ' link-active' : '';
+        const relClass = isConnectionSelected(c) ? ' link-active' : (isConnectionHovered(c) ? ' link-hover' : '');
         linksEl.appendChild(pathEl(a.x, a.y, b.x, b.y, `link${relClass}`));
         linkControlsEl.appendChild(linkDeleteButton(c, a, b));
         linksEl.appendChild(linkHitEl(a.x, a.y, b.x, b.y, c.id));
@@ -15868,6 +15926,10 @@ function updateConnectionHoverFromMouse(e){
 }
 function isConnectionSelected(connection){
     return selected.has(connection.from) || selected.has(connection.to);
+}
+// 悬停节点时其直接相连的线也高亮（批次4）。与选中区分：悬停用强调色。
+function isConnectionHovered(connection){
+    return Boolean(hoveredNodeId) && (connection.from === hoveredNodeId || connection.to === hoveredNodeId);
 }
 function refreshSelectionVisuals(){
     nodesEl.querySelectorAll('.node').forEach(el => {
@@ -16324,6 +16386,8 @@ function escapeAttr(str){ return escapeHtml(str); }
 
 window.onload = async () => {
     renderToolbarNodeButtons();  // 工具栏节点按钮由 NODE_TYPES 生成（与右键菜单同源）
+    installNodeHoverHighlight();
+    installCanvasShortcuts();
     applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'light');
     applyQuickToolbarState();
     if(window.StudioI18n) StudioI18n.apply();

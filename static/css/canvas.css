@@ -1652,3 +1652,20 @@ html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .tool
 .canvas-empty-guide kbd { display:inline-block; min-width:18px; padding:1px 5px; margin:0 2px; border:1px solid var(--line-2); border-radius:5px; background:var(--card-solid); color:var(--muted); font-family:inherit; font-size:11px; font-weight:800; }
 
 /* ==== 批次3 结束 ==== */
+
+/* ==== 批次4：交互打磨 ==== */
+/* 悬停节点时其相关连线高亮（复用 .link-active 配色但用强调色区分主动悬停） */
+.link.link-hover { stroke:var(--accent); stroke-width:3; opacity:1; }
+/* 拖拽中：被拖节点半透明，拖动跟手 */
+.node.dragging { opacity:.9; box-shadow:var(--shadow-pop); z-index:5; }
+/* 放置目标提示：拖连线到端口上时端口放大发光 */
+.port.port-target::after { background:var(--accent); transform:scale(1.45); }
+/* 快捷键提示浮层 */
+.shortcut-help { position:absolute; left:50%; bottom:96px; transform:translateX(-50%); z-index:45; min-width:280px; padding:12px 14px; border-radius:var(--r-lg); background:var(--panel); border:1px solid var(--line); box-shadow:var(--shadow-pop); backdrop-filter:blur(16px); }
+.shortcut-help[hidden] { display:none; }
+.shortcut-help h4 { margin:0 0 8px; color:var(--text); font-size:12px; font-weight:900; letter-spacing:.04em; }
+.shortcut-help dl { margin:0; display:grid; grid-template-columns:auto 1fr; gap:6px 12px; align-items:center; }
+.shortcut-help dt { color:var(--muted); font-size:11px; font-weight:800; text-align:right; white-space:nowrap; }
+.shortcut-help dd { margin:0; color:var(--text); font-size:11px; font-weight:600; }
+.shortcut-help kbd { display:inline-block; min-width:18px; padding:1px 5px; border:1px solid var(--line-2); border-radius:5px; background:var(--card-solid); color:var(--muted); font-family:inherit; font-size:11px; font-weight:800; }
+/* ==== 批次4 结束 ==== */
