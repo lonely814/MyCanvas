@@ -6,7 +6,6 @@
         '/static/js/i18n/studio.js',
         '/static/js/i18n/api-settings.js',
         '/static/js/i18n/canvas.js',
-        '/static/js/i18n/smart-canvas.js',
         '/static/js/i18n/comfyui-settings.js',
     ];
     const tags = scripts.map(src => '<script src="' + src + '?v=' + VERSION + '"></script>').join('');

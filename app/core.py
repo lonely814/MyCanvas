@@ -2398,10 +2398,6 @@ def save_canvas(canvas):
         with open(canvas_path(canvas["id"]), 'w', encoding='utf-8') as f:
             json.dump(canvas, f, ensure_ascii=False, indent=2)
 
-def normalize_canvas_kind(kind="classic"):
-    # 二开：smart 画布已移除，所有画布统一为 classic（旧 smart 数据保留在磁盘但不再展示）
-    return "classic"
-
 # ===== 项目（按项目分类管理画布）=====
 PROJECTS_PATH = os.path.join(DATA_DIR, "projects.json")
 DEFAULT_PROJECT_ID = "default"
@@ -2468,12 +2464,12 @@ def list_projects():
 
 def new_canvas(title="未命名画布", icon="layers", kind="classic", project=None, board_x=None, board_y=None):
     timestamp = now_ms()
-    canvas_kind = normalize_canvas_kind(kind)
     canvas = {
         "id": uuid.uuid4().hex,
-        "title": (title or ("智能画布" if canvas_kind == "smart" else "未命名画布"))[:80],
-        "icon": (icon or ("sparkles" if canvas_kind == "smart" else "🧩"))[:32],
-        "kind": canvas_kind,
+        "title": (title or "未命名画布")[:80],
+        "icon": (icon or "🧩")[:32],
+        # 新建一律 classic；旧磁盘上的 smart 画布由 list_canvases 等处的 kind 过滤排除
+        "kind": "classic",
         "owner": "",
         "color": "",
         "pinned": False,
@@ -2519,8 +2515,8 @@ def canvas_record(data):
         "id": data.get("id"),
         "title": data.get("title", "未命名画布"),
         "icon": data.get("icon", "🧩"),
-        // 保留原始 kind：list_canvases/画布资产索引据此过滤掉已移除的 smart 画布。
-        // 若在此处归一化成 classic，过滤条件将永远不成立（历史 bug）。
+        # 保留原始 kind：list_canvases / 画布资产索引据此过滤掉已移除的 smart 画布。
+        # 若在此归一化成 classic，过滤条件将永远不成立（历史 bug）。
         "kind": str(data.get("kind") or "classic").strip().lower() or "classic",
         "owner": str(data.get("owner") or "")[:40],
         "color": normalize_canvas_color(data.get("color")),

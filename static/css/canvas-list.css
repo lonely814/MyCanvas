@@ -175,7 +175,6 @@ html[data-studio-scale="off"].studio-scale-managed .workspace {
 .ws-card-icon { width:30px; height:30px; flex:0 0 auto; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--soft); color:var(--muted); border:1px solid var(--line); font-size:16px; }
 .ws-card-icon.icon-has-color { background:var(--accent); color:#fff; border-color:transparent; }
 .ws-card-kind { display:inline-flex; align-items:center; justify-content:center; flex:0 1 auto; min-width:0; max-width:calc(100% - 36px); height:22px; padding:0 8px; border-radius:6px; font-size:10px; font-weight:850; letter-spacing:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.ws-card-kind.smart { background:#f5f3ff; color:#6d28d9; border:1px solid #ddd6fe; }
 .ws-card-kind.classic { background:var(--soft-2); color:var(--muted); border:1px solid var(--line); }
 .ws-card-menu { margin-left:auto; width:28px; height:28px; flex:0 0 28px; border-radius:8px; display:flex; align-items:center; justify-content:center; color:var(--faint); background:transparent; border:1px solid transparent; cursor:pointer; opacity:.58; transition:all .14s var(--ease); }
 .ws-card:hover .ws-card-menu,.ws-card:focus-within .ws-card-menu { opacity:1; }
@@ -263,7 +262,6 @@ html[data-studio-scale="off"].studio-scale-managed .workspace {
 .theme-dark .ws-project-row.active .ws-proj-act:hover { color:#0f172a; background:rgba(15,23,42,.16); }
 .theme-dark .ws-project-row.active .ws-proj-act.del:hover { color:#991b1b; background:rgba(220,38,38,.14); }
 .theme-dark .ws-mini-btn.primary { background:#d8dee9; color:#0f172a; border-color:#d8dee9; }
-.theme-dark .ws-card-kind.smart { background:rgba(139,92,246,.18); color:#c4b5fd; border-color:rgba(139,92,246,.3); }
 .theme-dark .ws-create-confirm { background:#d8dee9; color:#0f172a; }
 .theme-dark .ws-create-toggle-btn.active { background:#d8dee9; color:#0f172a; }
 .theme-dark .ws-trash-act.restore:hover { color:#6ee7b7; background:rgba(5,150,105,.15); border-color:rgba(110,231,183,.35); }

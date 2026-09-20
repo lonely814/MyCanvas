@@ -241,7 +241,7 @@ async def get_canvas_meta(canvas_id: str):
 
         "icon": canvas.get("icon", "layers"),
 
-        "kind": normalize_canvas_kind(canvas.get("kind")),
+        "kind": "classic",
 
     }
 
@@ -527,19 +527,13 @@ async def update_canvas(canvas_id: str, payload: CanvasSaveRequest):
 
     canvas["icon"] = (payload.icon or canvas.get("icon") or "layers")[:32]
 
-    canvas["kind"] = normalize_canvas_kind(canvas.get("kind"))
+    canvas["kind"] = "classic"
 
     canvas["nodes"] = payload.nodes
 
     canvas["connections"] = payload.connections
 
-    if canvas["kind"] == "smart":
-
-        canvas["viewport"] = payload.viewport
-
-    else:
-
-        canvas["viewport"] = canvas.get("viewport") or {"x": 0, "y": 0, "scale": 1}
+    canvas["viewport"] = canvas.get("viewport") or {"x": 0, "y": 0, "scale": 1}
 
     canvas["logs"] = payload.logs[-500:]
 
