@@ -15994,7 +15994,17 @@ board.addEventListener('mousemove', e => {
     }
 });
 board.addEventListener('mouseleave', () => setHoveredConnection(''));
-board.ondblclick = null;
+// 双击空白处 = 右键空白处：都打开新建节点菜单。
+// 节点内的双击各有自己的处理（图片预览/分组灯箱），它们会 stopPropagation，
+// 加上下面的 target 判断，节点上的双击不会误触发菜单。
+board.ondblclick = e => {
+    if(!canvas) return;
+    if((e.ctrlKey || e.metaKey) || isRKeyDown) return;
+    if(e.target !== board && e.target !== world && e.target !== nodesEl && e.target !== linksEl) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openCreateMenu(e.clientX, e.clientY);
+};
 board.oncontextmenu = e => {
     if(!canvas) return;
     if((e.ctrlKey || e.metaKey) || isRKeyDown){
