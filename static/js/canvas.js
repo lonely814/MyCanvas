@@ -1,4 +1,11 @@
 function refreshIcons(){ if(window.lucide) lucide.createIcons(); }
+// 限定范围刷新图标：lucide.createIcons 默认扫整个 document（实测 400 节点约 54ms），
+// 只重建了画布节点时没必要全文档重扫。
+function refreshIconsWithin(root){
+    if(!root){ refreshIcons(); return; }
+    if(window.lucide && lucide.createIcons) lucide.createIcons({ root });
+    else refreshIcons();
+}
 refreshIcons();
 function tr(key){ return window.StudioI18n ? StudioI18n.t(key) : key; }
 function trf(key, values={}){
@@ -225,7 +232,8 @@ function applyLanguage(lang){
         currentCanvasTitle.textContent = canvas?.title || tr('canvas.untitled');
     }
     renderCanvasList();
-    render();
+    // 语言只影响文案、不体现在节点数据里，必须强制整体重建才能刷新节点内的文字
+    forceFullRender();
 }
 async function refreshCanvasConfigFromSettings(){
     await loadConfig();
@@ -234,7 +242,7 @@ async function refreshCanvasConfigFromSettings(){
         sanitizeImageNodeProviderModel(node);
         sanitizeVideoNodeProviderModel(node);
     });
-    if(typeof render === 'function') render();
+    if(typeof render === 'function') forceFullRender();  // 供应商/工作流变化会影响节点内下拉项
 }
 window.addEventListener('message', event => {
     if(event.origin && event.origin !== location.origin) return;
@@ -254,7 +262,7 @@ window.addEventListener('studio-lang-change', () => {
     refreshGateViewControls();
     if(canvas) currentCanvasTitle.textContent = canvas?.title || tr('canvas.untitled');
     renderCanvasList();
-    render();
+    forceFullRender();  // 语言影响节点内文案，需整体重建
 });
 window.addEventListener('studio-ui-scale-change', applyQuickToolbarState);
 const shell = document.getElementById('shell');
@@ -5990,45 +5998,79 @@ function measureCanvasOriginalImageNodes(root=nodesEl){
     });
 }
 
+// 渲染签名：内容没变的节点直接复用现有 DOM，只重建真正变化的部分。
+// render() 会被 2.5s 自动同步和每次结构性操作触发，原先每次都重建全部节点 DOM
+// （实测 100 节点约 80ms、400 节点约 600ms），是节点变多后卡顿的主因。
+// 语言/主题/供应商配置变化会改变节点外观但不体现在节点数据上，用 RENDER_EPOCH 强制整体重建。
+let RENDER_EPOCH = 0;
+function nodeRenderSignature(node){
+    return RENDER_EPOCH + '|' + JSON.stringify(node);
+}
+function forceFullRender(){
+    RENDER_EPOCH++;
+    render();
+}
 function render(){
     const outputScrolls = captureOutputScrolls();
     const mediaStates = captureMediaPlaybackStates();
-    const reusableMediaNodes = new Map();
-    // 性能：原来在 querySelectorAll('.node').forEach 里对每个元素做 nodes.find(...)，整体 O(N²)。
-    // 这里先用一次 O(N) 索引替换，节点多时 render() 的耗时从平方级降到线性级。
-    const nodeByIdMap = new Map(nodes.map(n => [n.id, n]));
-    nodesEl.querySelectorAll('.node').forEach(el => {
-        const node = nodeByIdMap.get(el.dataset.id);
-        if(nodeHasLiveMedia(node)) reusableMediaNodes.set(node.id, el);
-    });
     applyViewport();
-    [...nodesEl.children].forEach(child => {
-        if(!reusableMediaNodes.has(child.dataset?.id)) child.remove();
+    const existing = new Map();
+    nodesEl.querySelectorAll('.node').forEach(el => {
+        if(el.dataset?.id) existing.set(el.dataset.id, el);
     });
+    const wantedIds = new Set();
+    const ordered = [];
+    let rebuiltAny = false;
     nodes.forEach(node => {
+        wantedIds.add(node.id);
+        const sig = nodeRenderSignature(node);
+        const el = existing.get(node.id);
+        if(el && el.dataset.renderSig === sig){
+            // 内容未变：沿用现有节点，只同步选中态（几何在签名里，未变即无需改）
+            el.classList.toggle('selected', selected.has(node.id));
+            ordered.push(el);
+            return;
+        }
         // 单个节点渲染异常不能中断整个循环，否则它后面的节点（含新建节点，通常排在末尾）都不会被
         // 追加进 DOM，连带这些节点的连线也会因找不到 DOM 而画到 (0,0) 变成“消失”。
         try {
             const fresh = renderNode(node);
-            const old = reusableMediaNodes.get(node.id);
-            nodesEl.appendChild(fresh);
-            if(old){
-                transplantNodeMediaElement(old, fresh);
-                if(old !== fresh) old.remove();
+            fresh.dataset.renderSig = sig;
+            if(el){
+                if(nodeHasLiveMedia(node)) transplantNodeMediaElement(el, fresh);
+                el.remove();
             }
+            rebuiltAny = true;
+            ordered.push(fresh);
         } catch(err){
             console.error('[canvas] renderNode 失败，已跳过该节点：', node?.id, node?.type, err);
+            if(el) ordered.push(el);
+        }
+    });
+    existing.forEach((el, id) => {
+        if(!wantedIds.has(id)) el.remove();
+    });
+    // 按 nodes 顺序排列：只移动位置不对的元素，已就位的原样保留
+    let cursor = nodesEl.firstElementChild;
+    ordered.forEach(el => {
+        if(el === cursor){
+            cursor = cursor.nextElementSibling;
+        } else {
+            nodesEl.insertBefore(el, cursor);
         }
     });
     restoreMediaPlaybackStates(mediaStates);
     restoreOutputScrolls(outputScrolls);
-    invalidateGeometryCaches();  // DOM 已重建，索引与端口坐标必须失效
-    refreshGeometry();
-    refreshGeometryAfterLayout();
-    refreshIcons();
-    bindCanvasPreviewImageFallbacks(nodesEl);
-    syncCanvasSelectedImageResolution(nodesEl);
-    measureCanvasOriginalImageNodes(nodesEl);
+    if(rebuiltAny){
+        // 只有确实重建了节点才需要这些全量后处理；纯同步/选中态变化时全部跳过。
+        invalidateGeometryCaches();  // DOM 结构变化，索引与端口坐标必须失效
+        refreshGeometry();
+        refreshGeometryAfterLayout();
+        refreshIconsWithin(nodesEl);
+        bindCanvasPreviewImageFallbacks(nodesEl);
+        syncCanvasSelectedImageResolution(nodesEl);
+        measureCanvasOriginalImageNodes(nodesEl);
+    }
     refreshOutputTimer();
 }
 function refreshNodes(ids=[]){
@@ -6047,6 +6089,7 @@ function refreshNodes(ids=[]){
         }
         try {
             const fresh = renderNode(node);
+            fresh.dataset.renderSig = nodeRenderSignature(node);
             if(nodeHasLiveMedia(node)) transplantNodeMediaElement(current, fresh);
             current.replaceWith(fresh);
         } catch(err){
