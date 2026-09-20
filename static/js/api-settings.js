@@ -435,6 +435,7 @@ function updateApimartDomesticHint(item=provider()){
 }
 function renderProviderOnboarding(item){
     if(!providerOnboardingCard) return;
+    const guide = ONBOARDING_GUIDES[item?.id];
     const visible = Boolean(guide && isNewUserProvider(item));
     providerOnboardingCard.hidden = !visible;
     document.body.classList.toggle('show-provider-onboarding', visible);
@@ -623,8 +624,6 @@ function syncEditor(){
     item.image_request_mode = normalizeImageRequestMode(
         item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine' || CLI_PROTOCOLS.has(selectedProtocol)
             ? 'openai'
-            : lockedApi
-            ? lockedApi.image_request_mode
             : (imageRequestModeInput?.value || item.image_request_mode)
     );
     item.image_edit_route = normalizeImageEditRoute(
@@ -2123,14 +2122,14 @@ function renderEditor(){
             : API_PROTOCOLS.includes(protocolValue)
             ? protocolValue
             : 'openai';
-        protocolInput.disabled = FIXED_PROTOCOL_PROVIDER_IDS.has(item.id) || Boolean(lockedApi);
-        protocolInput.title = lockedApi ? '推荐平台使用固定协议' : (protocolInput.disabled ? '内置平台使用固定协议' : '');
+        protocolInput.disabled = FIXED_PROTOCOL_PROVIDER_IDS.has(item.id);
+        protocolInput.title = protocolInput.disabled ? '内置平台使用固定协议' : '';
     }
     if(imageRequestModeInput){
         const requestedMode = normalizeImageRequestMode(item.image_request_mode);
         imageRequestModeInput.value = requestedMode;
-        imageRequestModeInput.disabled = Boolean(lockedApi) || item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine' || CLI_PROTOCOLS.has(String(protocolInput?.value || item.protocol || '').toLowerCase());
-        imageRequestModeInput.title = lockedApi ? '推荐平台使用固定图片协议' : '';
+        imageRequestModeInput.disabled = item.id === 'modelscope' || item.id === 'runninghub' || item.id === 'volcengine' || CLI_PROTOCOLS.has(String(protocolInput?.value || item.protocol || '').toLowerCase());
+        imageRequestModeInput.title = '';
     }
     if(imageEditRouteInput){
         imageEditRouteInput.value = normalizeImageEditRoute(item.image_edit_route);
@@ -2541,11 +2540,6 @@ function applyDetectedProtocol(protocol){
     const item = provider();
     const detected = String(protocol || '').toLowerCase();
     if(!item || !protocolInput || !API_PROTOCOLS.includes(detected)) return false;
-    if(applyLockedRecommendedProtocol(item)){
-        protocolInput.value = item.protocol;
-        if(imageRequestModeInput) imageRequestModeInput.value = item.image_request_mode;
-        return false;
-    }
     if(String(protocolInput.value || '').toLowerCase() === detected && String(item.protocol || '').toLowerCase() === detected) return false;
     protocolInput.value = detected;
     item.protocol = detected;
@@ -3352,7 +3346,6 @@ async function saveProviders(){
     syncEditor();
     providers.forEach(item => {
         item.id = normalizeId(item.id);
-        applyLockedRecommendedProtocol(item);
         item.protocol = item.id === 'runninghub'
             ? 'runninghub'
             : item.id === 'volcengine'
@@ -3496,6 +3489,7 @@ window.addEventListener('studio-lang-change', () => {
 window.onload = () => {
     if(window.StudioTheme) window.StudioTheme.apply();
     if(window.StudioI18n) window.StudioI18n.apply();
+    loadProviders();  // 拉取渠道列表；此前误随推荐面板清理被删除，导致列表始终为空
     // 平台名输入时实时预览生成的 ID
     if(nameInput) nameInput.addEventListener('input', updateIdPreview);
     if(protocolInput) protocolInput.addEventListener('change', updateProtocolFromInput);
@@ -3503,11 +3497,6 @@ window.onload = () => {
     if(imageRequestModeInput) imageRequestModeInput.addEventListener('change', () => {
         const item = provider();
         if(!item) return;
-        if(applyLockedRecommendedProtocol(item)){
-            if(protocolInput) protocolInput.value = item.protocol;
-            imageRequestModeInput.value = item.image_request_mode;
-            return;
-        }
         item.image_request_mode = normalizeImageRequestMode(imageRequestModeInput.value);
     });
     if(imageEditRouteInput) imageEditRouteInput.addEventListener('change', () => {
