@@ -10560,13 +10560,14 @@ async def fetch_models_from_upstream(base_url: str, api_key: str, protocol: str 
     """从上游模型列表端点拉取模型，并按名称做轻量分类。"""
     protocol = protocol if protocol in SUPPORTED_PROVIDER_PROTOCOLS else "openai"
     if protocol == "codex":
-        from app.routes import codex_status
+        # 延迟导入：routers 模块级依赖 core，运行时此处 core 已加载完成，可安全反向引用
+        from app.routers.cli import codex_status
         status = await codex_status()
         payload = codex_models_payload(raw={"status": status})
         payload["message"] = status.get("message") or payload["message"]
         return payload
     if protocol == "gemini-cli":
-        from app.routes import gemini_cli_status
+        from app.routers.cli import gemini_cli_status
         status = await gemini_cli_status()
         payload = gemini_cli_models_payload(raw={"status": status})
         payload["message"] = status.get("message") or payload["message"]
@@ -10989,7 +10990,7 @@ async def run_canvas_comfy_task(task_id: str, payload: GenerateRequest):
             CANVAS_TASKS[task_id]["status"] = "running"
             CANVAS_TASKS[task_id]["updated_at"] = time.time()
     try:
-        from app.routes import generate
+        from app.routers.generation import generate
         result = await asyncio.to_thread(generate, payload)
         if isinstance(result, dict) and result.get("error"):
             raise RuntimeError(str(result.get("error") or "ComfyUI 生成失败"))
