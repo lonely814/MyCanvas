@@ -24,6 +24,8 @@ import mimetypes
 import tempfile
 import math
 import shlex
+import socket
+import ipaddress
 import functools
 import html
 import xml.etree.ElementTree as ET
@@ -5827,12 +5829,76 @@ def filename_from_media_url(url: str, fallback: str = "download.bin") -> str:
     name = os.path.basename(urllib.parse.unquote(path))
     return sanitize_export_filename(name or fallback, fallback)
 
+_CLOUD_METADATA_NETWORKS = (ipaddress.ip_network("100.64.0.0/10"),)
+
+def is_blocked_remote_ip(ip) -> bool:
+    """本机、内网、链路本地、组播、保留地址一律视为不可抓取目标。"""
+    if (ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast
+            or ip.is_unspecified or ip.is_reserved):
+        return True
+    # 100.64.0.0/10 运营商级 NAT，ipaddress 不认为是 private，但云厂商 metadata 常见于此
+    # （如 100.100.100.200），必须单独封掉。
+    return any(ip in net for net in _CLOUD_METADATA_NETWORKS)
+
+def assert_safe_remote_url(url: str) -> str:
+    """校验待抓取的远端 URL 指向公网地址，否则抛 400。
+
+    用户能把任意 URL 传进 /api/download-output 这类接口，服务端不做校验就等于送出一个
+    内网扫描器（可探测内网服务、读云厂商 metadata）。这里在发起请求前解析并逐条检查目标 IP。
+
+    ponytail: 只校验解析结果，不把连接钉到该 IP，理论上有 DNS rebinding 的 TOCTOU 窗口；
+    单实例自建部署下，代价小于自建 TLS 校验链路。
+    """
+    text = str(url or "").strip()
+    parsed = urllib.parse.urlparse(text)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="无效的下载地址")
+    host = parsed.hostname
+    if not host:
+        raise HTTPException(status_code=400, detail="无效的下载地址")
+    try:
+        infos = socket.getaddrinfo(
+            host, parsed.port or (443 if parsed.scheme == "https" else 80),
+            proto=socket.IPPROTO_TCP,
+        )
+    except socket.gaierror:
+        raise HTTPException(status_code=400, detail="无法解析目标地址")
+    if not infos:
+        raise HTTPException(status_code=400, detail="无法解析目标地址")
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(str(info[4][0]).split("%")[0])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="目标地址无效")
+        if is_blocked_remote_ip(ip):
+            raise HTTPException(status_code=400, detail="禁止访问本机或内网地址")
+    return text
+
+def safe_remote_get(url: str, headers=None, timeout=(10, 60), max_redirects: int = 5):
+    """带 SSRF 校验的流式 GET。逐跳校验重定向目标，避免用重定向绕过首次检查。"""
+    current = str(url or "").strip()
+    for _ in range(max_redirects + 1):
+        assert_safe_remote_url(current)
+        response = requests.get(
+            current, stream=True, timeout=timeout,
+            headers=headers or {}, allow_redirects=False,
+        )
+        if response.status_code in (301, 302, 303, 307, 308):
+            location = response.headers.get("location")
+            response.close()
+            if not location:
+                raise HTTPException(status_code=502, detail="远程地址重定向缺少目标")
+            current = urllib.parse.urljoin(current, location)
+            continue
+        return response
+    raise HTTPException(status_code=502, detail="远程地址重定向次数过多")
+
 def fetch_remote_media_bytes(url: str, timeout: float = 30.0, max_bytes: int = 200 * 1024 * 1024):
     text = rewrite_runninghub_file_url(str(url or "").strip())
     parsed = urllib.parse.urlparse(text)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return None
-    with requests.get(text, stream=True, timeout=timeout, headers={"User-Agent": "ComfyUI-API-Modelscope/1.0"}) as response:
+    with safe_remote_get(text, timeout=timeout, headers={"User-Agent": "ComfyUI-API-Modelscope/1.0"}) as response:
         response.raise_for_status()
         content_type = response.headers.get("content-type") or "application/octet-stream"
         chunks = []

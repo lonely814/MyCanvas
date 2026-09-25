@@ -324,6 +324,7 @@ def download_output(request: Request, url: str, name: str = "", inline: bool = F
         return FileResponse(path, media_type=content_type_for_path(path), filename=None if inline else filename)
 
     # 远程文件：流式代理，绝不把整段视频/大文件读进内存（否则多个视频同时代理会撑爆内存、拖垮单进程服务）。
+    # URL 由前端传入，必须过 SSRF 校验，否则该接口等于一个免登录的内网扫描器。
 
     parsed = urllib.parse.urlparse(str(url or "").strip())
 
@@ -341,15 +342,13 @@ def download_output(request: Request, url: str, name: str = "", inline: bool = F
 
             upstream_headers["Range"] = range_header
 
-        upstream = requests.get(
-
-            url, stream=True, timeout=(10, 60),
-
-            headers=upstream_headers,
-
-        )
+        upstream = core.safe_remote_get(url, headers=upstream_headers, timeout=(10, 60))
 
         upstream.raise_for_status()
+
+    except HTTPException:
+
+        raise
 
     except requests.RequestException as exc:
 
