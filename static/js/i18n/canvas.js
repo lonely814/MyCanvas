@@ -94,6 +94,7 @@
         "canvas.llmNode": { zh: "LLM 节点", en: "LLM Node" },
         "canvas.modelscopeGenerate": { zh: "Modelscope生成", en: "Modelscope Generate" },
         "canvas.comfyGenerate": { zh: "ComfyUI 生成", en: "ComfyUI Generate" },
+        "canvas.comfyRequiredMediaMissing": { zh: "工作流缺少必选输入：{fields}。请在画布上给该节点连上对应素材，或在工作流设置里取消「必填」。", en: "Workflow is missing required input: {fields}. Connect the matching media to this node, or uncheck \"Required\" in the workflow settings." },
         "canvas.videoGenerateNode": { zh: "视频生成", en: "Video Generate" },
         "canvas.rhGenerate": { zh: "RunningHub生成", en: "RunningHub Generate" },
         "canvas.rhModeApp": { zh: "AI应用", en: "AI App" },

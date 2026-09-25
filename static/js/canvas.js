@@ -12901,19 +12901,34 @@ async function runComfyNode(nodeId, opts={}){
             if(!workflowName || !wf) throw new Error(tr('canvas.comfyNoWorkflow'));
             const fields = wf?.config?.fields || [];
             const params = {};
-            const imageFields = fields.filter(f => comfyFieldKind(f) === 'image');
-            const videoFields = fields.filter(f => comfyFieldKind(f) === 'video');
-            const audioFields = fields.filter(f => comfyFieldKind(f) === 'audio');
+            // 媒体字段按槽位顺序分配：image_order 升序，同值再按 config 里的先后。
+            // 这样在编辑器里调顺序就能改变"第 1 张上游图喂给哪个节点"，
+            // 而不必删掉字段重建。未设置 image_order 时等价于原来的列表顺序。
+            const bySlot = list => [...list].sort((a, b) =>
+                (Number(a.image_order) || 0) - (Number(b.image_order) || 0));
+            const imageFields = bySlot(fields.filter(f => comfyFieldKind(f) === 'image'));
+            const videoFields = bySlot(fields.filter(f => comfyFieldKind(f) === 'video'));
+            const audioFields = bySlot(fields.filter(f => comfyFieldKind(f) === 'audio'));
             const promptFields = fields.filter(f => comfyFieldKind(f) === 'prompt');
             const settingFields = fields.filter(f => comfyFieldKind(f) === 'setting');
             const assignMediaFields = async (mediaFields, mediaRefs) => {
                 const names = [];
                 for(const ref of mediaRefs.slice(0, mediaFields.length)) names.push(await comfyNameForRef(ref));
+                const missing = [];
                 mediaFields.forEach((f, i) => {
                     if(!f.node || !f.input) return;
+                    const name = names[i];
+                    // 必填字段没拿到输入就明确报错。以前会把空字符串塞进 params，
+                    // ComfyUI 的 LoadImage 收到空文件名只会回一句含糊的加载失败，
+                    // 用户根本看不出是"图没连上"还是"工作流本身坏了"。
+                    if(!name){
+                        if(f.required === true) missing.push(f.name || f.input || `#${f.node}`);
+                        return;
+                    }
                     params[f.node] = params[f.node] || {};
-                    params[f.node][f.input] = names[i] || '';
+                    params[f.node][f.input] = name;
                 });
+                if(missing.length) throw new Error(trf('canvas.comfyRequiredMediaMissing', {fields: missing.join('、')}));
             };
             await assignMediaFields(imageFields, refs);
             await assignMediaFields(videoFields, videoRefsOnly(allRefs));
@@ -12921,7 +12936,9 @@ async function runComfyNode(nodeId, opts={}){
             promptFields.forEach(f => {
                 if(!f.node || !f.input) return;
                 params[f.node] = params[f.node] || {};
-                params[f.node][f.input] = prompt;
+                // source_from_upstream === false：这个字段固定用自己配置的值，不跟随上游提示词。
+                const useUpstream = f.source_from_upstream !== false;
+                params[f.node][f.input] = useUpstream ? prompt : (f.default ?? '');
             });
             settingFields.forEach(f => {
                 if(!f.node || !f.input) return;

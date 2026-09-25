@@ -1537,6 +1537,44 @@ def versioned_static_html(html: str) -> str:
         return f"{match.group('prefix')}{url}?v={cache_version}"
     return pattern.sub(replace, html)
 
+def sync_i18n_loader_version():
+    """把 static/js/i18n.js 里硬编码的模块版本号对齐到 i18n 文件的真实修改时间。
+
+    i18n.js 自己拼 `?v=VERSION` 去加载各 i18n 模块，这个 VERSION 是写死的字面量：
+    文案改了但版本号没改时，已缓存过的浏览器会一直用旧翻译（表现为界面显示原始 key）。
+    这里按 i18n 目录下所有文件的最新 mtime 生成版本，任何文案改动都会自动失效缓存。
+    """
+    loader = os.path.join(STATIC_DIR, "js", "i18n.js")
+    i18n_dir = os.path.join(STATIC_DIR, "js", "i18n")
+    if not os.path.isfile(loader) or not os.path.isdir(i18n_dir):
+        return
+    try:
+        newest = 0
+        for name in os.listdir(i18n_dir):
+            if name.startswith("._") or not name.lower().endswith(".js"):
+                continue
+            path = os.path.join(i18n_dir, name)
+            if os.path.isfile(path):
+                newest = max(newest, int(os.path.getmtime(path)))
+        if not newest:
+            return
+        # 注意：不能用 i18n.js 自己的 mtime 参与版本号。这个函数会写回 i18n.js，
+        # 写回就改 mtime，下一次启动版本号又变 → 每次冷启动都重写一次（正是要避免的抖动）。
+        # 只依赖 i18n 模块的 mtime：文案变了才变；i18n.js 自身的缓存由 HTML 的 ?v= 负责。
+        with open(loader, "r", encoding="utf-8") as f:
+            old = f.read()
+        new = re.sub(
+            r"(const\s+VERSION\s*=\s*['\"])[^'\"]*(['\"])",
+            rf"\g<1>{current_app_version()}.{newest}\g<2>",
+            old,
+            count=1,
+        )
+        if new != old:
+            with open(loader, "w", encoding="utf-8", newline="") as f:
+                f.write(new)
+    except Exception as e:
+        print(f"同步 i18n 加载器版本号失败: {e}")
+
 def sync_static_html_versions():
     version = current_app_version()
     if not version:
@@ -12177,6 +12215,15 @@ class WorkflowField(BaseModel):
     step: Optional[float] = None
     options: List[str] = []
     random_enabled: bool = False
+    # 媒体字段的槽位顺序：多个上游图片分别喂给哪个字段，按此值升序分配。
+    # 不设时按字段在 config 里的先后顺序（保持旧行为）。
+    image_order: int = 0
+    # 媒体字段是否必须拿到上游输入。为真且没连图时直接报错，
+    # 避免把空字符串塞给 ComfyUI 的 LoadImage 换来一句看不懂的加载失败。
+    required: bool = False
+    # 仅对提示词类字段有意义：False = 固定用本字段的值，不跟随上游提示词。
+    # None/True = 有上游提示词就用上游（默认行为）。
+    source_from_upstream: Optional[bool] = None
 
 class WorkflowConfig(BaseModel):
     title: str = ""

@@ -257,6 +257,10 @@ async def startup_event():
 
     core.GLOBAL_LOOP = asyncio.get_running_loop()
 
+    # 先同步 i18n 加载器（会写回 i18n.js，改变其 mtime），
+    # 再同步 HTML 缓存版本，否则 HTML 记下的是 i18n.js 写入前的旧 mtime。
+    sync_i18n_loader_version()
+
     sync_static_html_versions()
 
     # 启动时整理资产库：给所有图片分组（含默认角色/场景）建好文件夹，并把根目录里的旧素材归整进去。

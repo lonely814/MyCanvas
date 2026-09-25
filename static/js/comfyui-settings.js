@@ -408,7 +408,8 @@ function updateField(fieldId, key, value){
     }
     // 文本/数字输入过程中不能重建浮窗，否则输入框会失焦，表现成每次只能输入 1 个字。
     // 这些字段只影响预览或运行参数，直接同步数据即可；切换 type 才需要重建表单结构。
-    if(key === 'name' || key === 'min' || key === 'max' || key === 'step' || key === 'default' || key === 'options' || key === 'random_enabled'){
+    if(key === 'name' || key === 'min' || key === 'max' || key === 'step' || key === 'default' || key === 'options' || key === 'random_enabled'
+        || key === 'image_order' || key === 'required' || key === 'source_from_upstream'){
         renderPreview();
         if(workspaceMode === 'canvas') renderMiniCanvasPreview(miniCanvasHost, true);
         return;
@@ -751,10 +752,20 @@ document.addEventListener('keydown', e => {
     if(e.key === 'Escape') closeImagePreview();
 });
 
+// 字段归类，与画布运行时的 comfyFieldKind 保持一致：
+// 界面按同一分类决定暴露哪些额外设置，否则会出现"编辑器能配但运行时按另一种分类读"的错位。
+function fieldKindOf(f){
+    if(['image','video','audio'].includes(f?.type)) return f.type;
+    const key = `${f?.input || ''} ${f?.name || ''}`.toLowerCase();
+    if(f?.type === 'textarea' || /prompt|text|提示词|正向|负向/.test(key)) return 'prompt';
+    return 'setting';
+}
 function renderInputRow(nodeId, inputKey, rawValue){
     const f = fieldFor(nodeId, inputKey);
     const active = !!f;
-    const showExtras = active && (f.type === 'slider' || f.type === 'number' || f.type === 'dropdown');
+    const kind = active ? fieldKindOf(f) : '';
+    const showExtras = active && (f.type === 'slider' || f.type === 'number' || f.type === 'dropdown'
+        || ['image','video','audio','prompt'].includes(kind));
     // 原始值类型徽章
     let valueBadge = '';
     const typeOf = typeof rawValue;
@@ -789,6 +800,24 @@ function renderInputRow(nodeId, inputKey, rawValue){
 }
 
 function renderExtras(f){
+    const kind = fieldKindOf(f);
+    // 媒体字段：槽位顺序 + 是否必填。画布上有多个上游图片时，按 image_order 升序依次分配，
+    // 没有这个设置就只能靠字段在列表里的顺序，改顺序要删了重建。
+    if(['image','video','audio'].includes(kind)){
+        const fid = escapeAttr(f.id);
+        return `<div class="extras-row">
+            <div class="extra-pair">${tr('comfy.slotOrder')}<input class="small-input" type="number" min="0" step="1" value="${f.image_order ?? 0}" oninput="updateField('${fid}','image_order',this.value===''?0:parseInt(this.value,10)||0)"></div>
+            <label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.required === true ? 'checked' : ''} onchange="updateField('${fid}','required',this.checked)">${tr('comfy.fieldRequired')}</label>
+        </div>`;
+    }
+    // 提示词字段：可选择是否跟随上游提示词（默认跟随）
+    if(kind === 'prompt'){
+        const fid = escapeAttr(f.id);
+        const follows = f.source_from_upstream !== false;
+        return `<div class="extras-row">
+            <label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${follows ? 'checked' : ''} onchange="updateField('${fid}','source_from_upstream',this.checked)">${tr('comfy.followUpstreamPrompt')}</label>
+        </div>`;
+    }
     if(f.type === 'slider' || f.type === 'number'){
         const randomToggle = f.type === 'number'
             ? `<label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.random_enabled === true ? 'checked' : ''} onchange="updateField('${f.id}','random_enabled',this.checked)">随机数</label>`
