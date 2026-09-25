@@ -161,7 +161,8 @@ class ConnectionManager:
 
 manager = ConnectionManager()
 GLOBAL_LOOP = None
-APP_VERSION = "2026.06.03"
+# 版本号唯一来源是仓库根目录的 VERSION 文件（见 current_app_version），
+# 它同时用于静态资源缓存版本，不要再单独维护一份常量。
 
 # --- 配置区域 ---
 
@@ -3708,9 +3709,39 @@ def codex_model_for_exec(model="", fallback=""):
         return ""
     return value
 
+_CREDENTIAL_IN_TEXT_RE = re.compile(
+    r"""(?xi)
+    ( \b(?:api[_-]?key|apikey|access[_-]?token|refresh[_-]?token|client[_-]?secret|
+           secret[_-]?key|password|passwd|token|authorization|auth[_-]?token) \b
+      \s* [:=] \s* ) ( ["']? ) ( [^\s"',;]+ )
+  | ( \bBearer\s+ ) ( [A-Za-z0-9\-._~+/]{12,}=* )
+  | ( \b(?:sk|pk|rk|mcp)-[A-Za-z0-9\-_]{12,} )
+    """
+)
+
+def redact_credentials(text):
+    """抹掉 CLI 输出里的常见凭据，避免 stderr 原样回传前端（CLI 工具常把带 key 的
+    请求行、配置内容打进错误信息）。
+
+    只匹配明确的凭据标记（key=value、Bearer、sk-/pk-/mcp- 前缀），不按"长随机串"兜底：
+    jimeng 的任务 ID 就是从 stdout 里解析出来的，按长度一刀切会把 ID 一起抹掉，导致轮询失败。
+    """
+    if not text:
+        return text
+    def _kv(match):
+        return f"{match.group(1)}{match.group(2)}••••••••"
+    def _bearer(match):
+        return f"{match.group(4)}••••••••"
+    def _prefixed(match):
+        return f"{match.group(6)[:3]}••••••••"
+    return _CREDENTIAL_IN_TEXT_RE.sub(
+        lambda m: _kv(m) if m.group(1) else (_bearer(m) if m.group(4) else _prefixed(m)),
+        text,
+    )
+
 def codex_decode_output(stdout, stderr):
-    out_text = (stdout or b"").decode("utf-8", errors="replace").strip()
-    err_text = (stderr or b"").decode("utf-8", errors="replace").strip()
+    out_text = redact_credentials((stdout or b"").decode("utf-8", errors="replace").strip())
+    err_text = redact_credentials((stderr or b"").decode("utf-8", errors="replace").strip())
     return out_text, err_text
 
 async def run_codex_cli(prompt, model="", image_paths=None, timeout=None, output_last_message=True):
@@ -4903,7 +4934,8 @@ def jimeng_decode_cli_output(stdout, stderr):
     out_text = (decode_wsl_output(stdout) if jimeng_use_wsl() else stdout.decode("utf-8", errors="replace")).strip()
     err_text = (decode_wsl_output(stderr) if jimeng_use_wsl() else stderr.decode("utf-8", errors="replace")).strip()
     clean_err_text = jimeng_clean_wsl_stderr(err_text) if jimeng_use_wsl() else err_text
-    return out_text, clean_err_text
+    # stdout 里可能有任务 ID（后续要用来轮询），只对 stderr 脱敏
+    return out_text, redact_credentials(clean_err_text)
 
 def jimeng_login_text():
     parts = []

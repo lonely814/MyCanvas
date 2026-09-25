@@ -528,6 +528,7 @@ const activeCanvasTaskPolls = new Set();
 let hoveredConnectionId = '';
 let lastMouseBoard = {x: 0, y: 0};
 let undoStack = [];
+let redoStack = [];
 const UNDO_MAX = 30;
 const cascadeRunningIds = new Set();
 const cascadeStopIds = new Set();
@@ -2110,6 +2111,9 @@ async function openCanvas(id){
         if(!res.ok) throw new Error(tr('canvas.openFailed'));
         const data = await res.json();
         resetCascadeRuntimeState();
+        // 换画布：上一个画布的历史对它没有意义，清空避免撤销出别的画布的内容
+        undoStack.length = 0;
+        redoStack.length = 0;
         canvas = data.canvas;
         rememberCanvasListProject(canvas.project || 'default');
         const touched = await touchCanvasOpened(canvas.id);
@@ -2164,6 +2168,9 @@ function applyRemoteCanvasData(remote){
         pruneMissingComfyWorkflows();
         refreshMissingCanvasAssets().then(() => render());
         selected = new Set([...localSelectedIds].filter(id => nodes.some(node => node.id === id)));
+        // 远端版本已覆盖本地内容，重做栈里的快照不再对应当前文档，丢弃。
+        redoStack.length = 0;
+        refreshHistoryButtons();
         renderCanvasList();
         render();
         resumeCanvasImageTasks();
@@ -2538,6 +2545,8 @@ function canvasListUrlForProject(projectId){
 
 function addNode(node){
     if(!ensureCanvas()) return;
+    // 节点创建此前不记入撤销历史（addNode 没有 pushUndo），导致 Ctrl+Z 对"新建节点"无效。
+    pushUndo();
     nodes.push(node);
     render();
     scheduleSave();
@@ -14304,6 +14313,8 @@ promptTemplatePanel?.addEventListener('click', event => {
     }
 });
 canvasAssetToggle?.addEventListener('click', () => toggleCanvasAssetLibrary());
+document.getElementById('canvasUndoBtn')?.addEventListener('click', () => performUndo());
+document.getElementById('canvasRedoBtn')?.addEventListener('click', () => performRedo());
 workflowTransferToggle?.addEventListener('click', () => {
     if(workflowTransferModal?.classList.contains('open')) closeWorkflowTransferModal();
     else openWorkflowTransferModal();
@@ -14908,6 +14919,44 @@ function groupSelectedImages(){
     render();
     scheduleSave();
 }
+// 解散分组：保留组内节点，只删掉组壳，并把组承接的连线还给组内节点。
+// 打组时 handoffExistingInputsToGroup 把「子节点→生成器」的连线改成了「组→生成器」，
+// 这里必须反向还原，否则解散后组内内容会与下游生成器断连。
+function ungroupSelected(){
+    if(!ensureCanvas()) return;
+    const groups = [...selected]
+        .map(id => nodes.find(n => n.id === id))
+        .filter(n => n && (n.type === 'group' || n.type === 'promptGroup'));
+    if(!groups.length){
+        setStatus(tr('canvas.ungroupNeedSelection'));
+        return;
+    }
+    pushUndo();
+    const groupIds = new Set(groups.map(g => g.id));
+    groups.forEach(group => {
+        const children = (group.items || [])
+            .map(id => nodes.find(n => n.id === id))
+            .filter(n => n && ['image','prompt'].includes(n.type));
+        // 组的下游连线：能还给某个组内节点的就还，还不了的随组一起删
+        connections.filter(c => c.from === group.id).forEach(conn => {
+            const target = nodes.find(n => n.id === conn.to);
+            if(!target) return;
+            const successor = children.find(child =>
+                canConnect(child.id, target.id)
+                && !connections.some(c => c.from === child.id && c.to === target.id));
+            if(successor) connections.push({id:uid('c'), from:successor.id, to:target.id});
+            connections = connections.filter(c => c !== conn);
+        });
+        // 指向组本身的连线（组作为生成器输入时才有）也一并清掉
+        connections = connections.filter(c => c.to !== group.id);
+    });
+    nodes = nodes.filter(n => !groupIds.has(n.id));
+    selected = new Set(groups.flatMap(g => g.items || []).filter(id => nodes.some(n => n.id === id)));
+    syncGeneratorInputs();
+    refreshGeneratorInputViews();
+    render();
+    scheduleSave();
+}
 function nodeBounds(ids){
     const rects = ids.map(id => {
         const n = nodes.find(item => item.id === id);
@@ -15002,20 +15051,53 @@ function connectSelectionToGenerator(kind, genId){
     syncGeneratorInputs();
 }
 
+function canvasSnapshot(){
+    const state = {nodes:JSON.parse(JSON.stringify(serializableCanvasNodes())), connections:JSON.parse(JSON.stringify(connections))};
+    state.signature = JSON.stringify({nodes:state.nodes, connections:state.connections});
+    return state;
+}
 function pushUndo(){
     if(!canvas) return;
-    undoStack.push({nodes:JSON.parse(JSON.stringify(serializableCanvasNodes())), connections:JSON.parse(JSON.stringify(connections))});
+    const next = canvasSnapshot();
+    // 同一个操作可能有多层入口各自 pushUndo（如 createLinkedNode 先 push，内部 addNode 再 push）。
+    // 内容相同的快照压两次不会让撤销出错，但会让"重做"浪费一步空操作，所以这里去重。
+    if(undoStack.length && undoStack[undoStack.length - 1].signature === next.signature) return;
+    undoStack.push(next);
     if(undoStack.length > UNDO_MAX) undoStack.shift();
+    // 新操作产生后，原来的重做分支已失效
+    redoStack.length = 0;
+    refreshHistoryButtons();
 }
-function performUndo(){
-    if(!canvas || !undoStack.length) return;
-    const state = undoStack.pop();
+function applySnapshot(state){
     nodes = state.nodes;
     connections = state.connections;
     selected.clear();
     render();
     scheduleSave();
 }
+function performUndo(){
+    if(!canvas || !undoStack.length) return;
+    // 把当前状态推进重做栈，才能把这一步撤销回来
+    redoStack.push(canvasSnapshot());
+    if(redoStack.length > UNDO_MAX) redoStack.shift();
+    applySnapshot(undoStack.pop());
+    refreshHistoryButtons();
+}
+function performRedo(){
+    if(!canvas || !redoStack.length) return;
+    undoStack.push(canvasSnapshot());
+    if(undoStack.length > UNDO_MAX) undoStack.shift();
+    applySnapshot(redoStack.pop());
+    refreshHistoryButtons();
+}
+// 撤销/重做可用性反映到工具栏按钮（没有按钮时静默跳过）
+function refreshHistoryButtons(){
+    const undoBtn = document.getElementById('canvasUndoBtn');
+    const redoBtn = document.getElementById('canvasRedoBtn');
+    if(undoBtn) undoBtn.disabled = !undoStack.length;
+    if(redoBtn) redoBtn.disabled = !redoStack.length;
+}
+
 function cloneNode(n, dx, dy){
     const copy = JSON.parse(JSON.stringify(serializableCanvasNode(n)));
     copy.id = uid(n.type);
@@ -16237,6 +16319,10 @@ window.addEventListener('paste', e => {
 });
 window.addEventListener('keydown', e => {
     if(!canvas) return;
+    // 中文/日文等输入法组字过程中的按键不是快捷键：拼音的 r、z、g 会被当成命令，
+    // 触发刀模、撤销、打组。isComposing 是标准信号，keyCode 229 是部分浏览器的兜底；
+    // keydown 在组字期间也可能是 'Process'，所以不能只比对 e.key。
+    if(e.isComposing || e.keyCode === 229 || e.which === 229) return;
     const key = String(e.key || '').toLowerCase();
     if(key === 'r' && !isEditableTarget(e.target)) isRKeyDown = true;
     if(e.key === 'Shift' && !e.altKey && !isEditableTarget(document.activeElement)) setKnifeMode(true);
@@ -16262,7 +16348,11 @@ window.addEventListener('keydown', e => {
         toggleZoomPreview();
         return;
     }
-    if((e.ctrlKey || e.metaKey) && key === 'g') { e.preventDefault(); groupSelectedImages(); }
+    if((e.ctrlKey || e.metaKey) && key === 'g') {
+        e.preventDefault();
+        // Ctrl+Shift+G：解散分组
+        if(e.shiftKey) ungroupSelected(); else groupSelectedImages();
+    }
     if((e.ctrlKey || e.metaKey) && key === 'c') {
         // 在输入框/可编辑元素里时，让浏览器原生 Ctrl+C 工作
         const tag = document.activeElement?.tagName;
@@ -16288,7 +16378,17 @@ window.addEventListener('keydown', e => {
     if((e.ctrlKey || e.metaKey) && key === 'z') {
         const tag = document.activeElement?.tagName;
         if(tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
-        e.preventDefault(); performUndo();
+        e.preventDefault();
+        // Ctrl+Shift+Z 与 Ctrl+Y 为重做，与主流编辑器一致
+        if(e.shiftKey) performRedo(); else performUndo();
+        return;
+    }
+    if((e.ctrlKey || e.metaKey) && key === 'y') {
+        const tag = document.activeElement?.tagName;
+        if(tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+        e.preventDefault();
+        performRedo();
+        return;
     }
     if(e.key === 'Delete' || e.key === 'Backspace') {
         const tag = document.activeElement?.tagName;
