@@ -234,8 +234,7 @@ def save_storage_settings(payload):
     for path in dirs.values():
         os.makedirs(path, exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(STORAGE_SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(dirs, f, ensure_ascii=False, indent=2)
+    write_json_atomic(STORAGE_SETTINGS_FILE, dirs)
     apply_storage_settings(dirs)
     return {"dirs": dirs}
 
@@ -1267,9 +1266,11 @@ def load_api_providers():
     defaults = default_api_providers()
     if not os.path.exists(API_PROVIDERS_FILE):
         return merge_default_api_providers(defaults)
+    raw = read_json_checked(API_PROVIDERS_FILE, None)
+    if raw is None:
+        # 平台配置里含 API Key，损坏时已另存备份，这里只用默认值兜底，不能让它带坏后续保存
+        return defaults
     try:
-        with open(API_PROVIDERS_FILE, "r", encoding="utf-8") as f:
-            raw = json.load(f)
         providers = [normalize_provider(item) for item in raw if isinstance(item, dict)]
         return merge_default_api_providers(providers or defaults, inject_missing=not bool(providers))
     except Exception as e:
@@ -1279,8 +1280,7 @@ def load_api_providers():
 def save_api_providers(providers):
     os.makedirs(DATA_DIR, exist_ok=True)
     with GLOBAL_CONFIG_LOCK:
-        with open(API_PROVIDERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(providers, f, ensure_ascii=False, indent=2)
+        write_json_atomic(API_PROVIDERS_FILE, providers)
 
 def default_runninghub_static_provider():
     return {
@@ -1335,9 +1335,9 @@ def mutate_static_runninghub_provider(mutator):
     changed = mutator(provider)
     if changed is False:
         return False
-    with open(STATIC_RUNNINGHUB_API_PROVIDERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(raw, f, ensure_ascii=False, indent=2)
-        f.write("\n")
+    # 原子写：该文件是随仓库分发的模板（git 可恢复），但写坏后会导致下次加载重建模板、
+    # 丢掉用户在此处的 RunningHub 配置，所以同样避免半截写入。
+    write_json_atomic(STATIC_RUNNINGHUB_API_PROVIDERS_FILE, raw)
     return True
 
 def sync_runninghub_provider_workflows_to_static_template(provider):
@@ -1484,8 +1484,8 @@ def update_env_values(updates):
         if key not in seen:
             next_lines.append(f"{key}={env_quote(value)}")
             os.environ[key] = str(value or "")
-    with open(API_ENV_FILE, "w", encoding="utf-8") as f:
-        f.write("\n".join(next_lines).rstrip() + "\n")
+    # API/.env 里是明文渠道密钥，写坏会导致所有渠道配置丢失且无法从别处恢复，必须原子写。
+    write_text_atomic(API_ENV_FILE, "\n".join(next_lines).rstrip() + "\n")
 
 BACKEND_LOCAL_LOAD = {addr: 0 for addr in COMFYUI_INSTANCES}
 
@@ -1848,6 +1848,69 @@ def canvas_task_save_locked():
         os.replace(tmp, CANVAS_TASKS_FILE)
     except Exception as e:
         print(f"保存画布任务状态失败: {e}")
+
+def write_json_atomic(path, data, indent=2):
+    """原子写 JSON：先写临时文件，再 os.replace 覆盖目标。
+
+    直接 open(path,'w') 覆盖写在中途失败（磁盘满、进程被杀、断电）时会留下半截文件，
+    下一次读取解析失败。JSON 数据文件统一走这里，避免把好文件写坏。
+    """
+    os.makedirs(os.path.dirname(path) or DATA_DIR, exist_ok=True)
+    tmp = f"{path}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=indent)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        # 失败时清掉残留的临时文件，避免污染目录
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        raise
+
+def write_text_atomic(path, text):
+    """原子写文本文件（用于 API/.env 这类非 JSON 的配置文件）。"""
+    os.makedirs(os.path.dirname(path) or DATA_DIR, exist_ok=True)
+    tmp = f"{path}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        raise
+
+def read_json_checked(path, default):
+    """读 JSON；解析失败时先保留损坏文件再返回默认值。
+
+    把这些数据文件的"读-改-写"看成一串：写坏 → 读回默认值 → 业务把默认值写回，
+    结果是把一个也许还能人工抢救的文件彻底覆盖掉。所以这里在返回默认值之前，
+    先把损坏文件改名留证（<name>.corrupt-<时间戳>）并打警告，绝不静默丢弃。
+    """
+    if not os.path.exists(path):
+        return default
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        backup = f"{path}.corrupt-{stamp}"
+        try:
+            os.replace(path, backup)
+            print(f"[JSON-CORRUPT] {path} 解析失败（{e}），已保留为 {backup}，本次使用默认值", flush=True)
+        except Exception as move_err:
+            print(f"[JSON-CORRUPT] {path} 解析失败（{e}），且无法备份（{move_err}），本次使用默认值", flush=True)
+        return default
 
 def canvas_task_prune_locked():
     """调用方必须已持有 CANVAS_TASK_LOCK。按 TTL 与总量上限淘汰旧任务。"""
@@ -2473,17 +2536,13 @@ def comfy_class_is_debug_text(class_type):
 
 def save_to_history(record):
     with HISTORY_LOCK:
-        history = []
-        if os.path.exists(HISTORY_FILE):
-            try:
-                with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-                    history = json.load(f)
-            except: pass
+        history = read_json_checked(HISTORY_FILE, [])
+        if not isinstance(history, list):
+            history = []
         if "timestamp" not in record:
             record["timestamp"] = time.time()
         history.insert(0, record)
-        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-            json.dump(history[:5000], f, ensure_ascii=False, indent=4)
+        write_json_atomic(HISTORY_FILE, history[:5000], indent=4)
 
 def get_comfy_history(comfy_address, prompt_id):
     try:
@@ -2504,28 +2563,23 @@ def canvas_path(canvas_id):
 def save_canvas(canvas):
     canvas["updated_at"] = now_ms()
     with CANVAS_LOCK:
-        with open(canvas_path(canvas["id"]), 'w', encoding='utf-8') as f:
-            json.dump(canvas, f, ensure_ascii=False, indent=2)
+        write_json_atomic(canvas_path(canvas["id"]), canvas)
 
 # ===== 项目（按项目分类管理画布）=====
 PROJECTS_PATH = os.path.join(DATA_DIR, "projects.json")
 DEFAULT_PROJECT_ID = "default"
 
 def load_projects():
-    try:
-        with open(PROJECTS_PATH, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+    data = read_json_checked(PROJECTS_PATH, None)
+    if data is not None:
         projects = data.get("projects") if isinstance(data, dict) else data
         if isinstance(projects, list):
             return [p for p in projects if isinstance(p, dict) and p.get("id")]
-    except Exception:
-        pass
     return []
 
 def save_projects(projects):
     with CANVAS_LOCK:
-        with open(PROJECTS_PATH, 'w', encoding='utf-8') as f:
-            json.dump({"projects": projects}, f, ensure_ascii=False, indent=2)
+        write_json_atomic(PROJECTS_PATH, {"projects": projects})
 
 def project_record(p):
     return {
@@ -2664,7 +2718,10 @@ def iter_canvas_records(include_deleted=False):
         try:
             with open(os.path.join(CANVAS_DIR, filename), 'r', encoding='utf-8') as f:
                 data = json.load(f)
-        except Exception:
+        except Exception as e:
+            # 损坏的画布文件会被跳过（画布从列表消失），但文件本身保留在原地不删不覆盖。
+            # 原先这里是静默 continue，用户只会看到画布"不见了"却无从排查，所以补一条警告。
+            print(f"[CANVAS-CORRUPT] 跳过无法解析的画布文件 {filename}：{e}", flush=True)
             continue
         is_deleted = bool(data.get("deleted_at"))
         if include_deleted != is_deleted:
@@ -5736,7 +5793,16 @@ def image_task_fail_reason(payload):
     error = task_data.get("error") if isinstance(task_data.get("error"), dict) else {}
     return task_data.get("fail_reason") or task_data.get("message") or error.get("message") or (payload.get("message") if isinstance(payload, dict) else "") or "生图任务失败"
 
+# 只有幂等的读取才允许自动重试。POST 绝不能重发：提交超时并不代表上游没收到，
+# 重发会在上游创建第二个任务并重复扣费（生成类上游按任务计费），而用户只在画布上点了一次。
+# 提交类请求超时后应改用 task_id 去查原任务状态，而不是重发。
+# 同类做法参考 LaohuAD 的 canvas_core/transport.py（只重试 GET/HEAD/OPTIONS）。
+_RETRYABLE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
 async def httpx_request_with_transient_retries(client, method, url, attempts=2, retry_delay=1.2, **kwargs):
+    if str(method or "").strip().upper() not in _RETRYABLE_METHODS:
+        # 非幂等方法只发一次，失败直接抛给调用方，不做任何自动重发。
+        return await client.request(method, url, **kwargs)
     attempts = max(1, int(attempts or 1))
     last_exc = None
     retry_statuses = {502, 503, 504, 520, 522, 524}
@@ -6194,10 +6260,8 @@ def load_asset_library():
         lib = default_asset_library()
         save_asset_library(lib)
         return lib
-    try:
-        with open(ASSET_LIBRARY_PATH, "r", encoding="utf-8") as f:
-            lib = json.load(f)
-    except Exception:
+    lib = read_json_checked(ASSET_LIBRARY_PATH, None)
+    if lib is None:
         lib = default_asset_library()
     return normalize_asset_library(lib)
 
@@ -6338,8 +6402,7 @@ def save_asset_classification_prompt(text):
     if len(value) > 20000:
         raise HTTPException(status_code=400, detail="分类规则过长")
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(ASSET_CLASSIFICATION_PROMPT_FILE, "w", encoding="utf-8") as f:
-        f.write(value)
+    write_text_atomic(ASSET_CLASSIFICATION_PROMPT_FILE, value)
     return value
 
 ASSET_CLASSIFICATION_DIMENSION_NAMES = {
@@ -6448,8 +6511,7 @@ def _read_local_upload_classification(filename):
 
 def _write_local_upload_classification(filename, classification):
     path = _local_upload_classification_path(filename)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(normalize_asset_classification(classification), f, ensure_ascii=False, indent=2)
+    write_json_atomic(path, normalize_asset_classification(classification))
 
 def asset_classification_prompt(extra_prompt=""):
     base = load_asset_classification_prompt()
@@ -6575,8 +6637,7 @@ def save_asset_library(lib):
     sort_asset_library_items(lib)
     lib["updated_at"] = now_ms()
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(ASSET_LIBRARY_PATH, "w", encoding="utf-8") as f:
-        json.dump(lib, f, ensure_ascii=False, indent=2)
+    write_json_atomic(ASSET_LIBRARY_PATH, lib)
     if GLOBAL_LOOP:
         asyncio.run_coroutine_threadsafe(manager.broadcast_asset_library_updated(int(lib["updated_at"])), GLOBAL_LOOP)
 
@@ -6636,8 +6697,7 @@ def shared_folders_load():
 
 def shared_folders_save(data):
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(SHARED_FOLDERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    write_json_atomic(SHARED_FOLDERS_FILE, data)
 
 def shared_folder_by_id(folder_id):
     for entry in shared_folders_load().get("folders", []):
@@ -6890,11 +6950,7 @@ def load_prompt_libraries():
     if not os.path.exists(PROMPT_LIBRARY_PATH):
         data = default_prompt_libraries()
         return save_prompt_libraries(data)
-    try:
-        with open(PROMPT_LIBRARY_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        data = default_prompt_libraries()
+    data = read_json_checked(PROMPT_LIBRARY_PATH, None)
     if not isinstance(data, dict):
         data = default_prompt_libraries()
     normalized = normalize_prompt_libraries(data)
@@ -6906,8 +6962,7 @@ def save_prompt_libraries(data):
     data = normalize_prompt_libraries(data)
     data["updated_at"] = now_ms()
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(PROMPT_LIBRARY_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    write_json_atomic(PROMPT_LIBRARY_PATH, data)
     return data
 
 def public_prompt_libraries(data=None):
@@ -12311,8 +12366,7 @@ def load_runninghub_workflow_store():
 
 def save_runninghub_workflow_store(store):
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(RUNNINGHUB_WORKFLOW_STORE_FILE, "w", encoding="utf-8") as f:
-        json.dump(store, f, ensure_ascii=False, indent=2)
+    write_json_atomic(RUNNINGHUB_WORKFLOW_STORE_FILE, store)
 
 def prune_runninghub_workflow_store_for_provider(provider):
     if not isinstance(provider, dict) or provider.get("id") != "runninghub":
