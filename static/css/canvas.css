@@ -17,8 +17,10 @@
     --shadow-card:0 1px 2px rgba(0,0,0,.4); --shadow-pop:0 12px 32px rgba(0,0,0,.5); --shadow-selected:0 0 0 2px rgba(96,165,250,.5);
     --ok:#4ade80; --warn:#fbbf24; --danger:#f87171; --accent:#60a5fa; --accent-soft:rgba(96,165,250,.14); }
 * { box-sizing:border-box; }
-body { margin:0; height:100vh; overflow:hidden; background:var(--page); color:var(--text); font-family:'Inter',-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
-.shell { position:relative; height:100vh; overflow:hidden; }
+body { margin:0; height:100vh; height:100dvh; overflow:hidden; background:var(--page); color:var(--text); font-family:'Inter',-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
+/* 移动端用 dvh：手机地址栏展开时 100vh 取的是"最高视口"，会把底部裁掉（工具栏/菜单被切）。
+   dvh 跟随可见区域，桌面两者等价；旧浏览器不认 dvh 会保留上面的 vh。 */
+.shell { position:relative; height:100vh; height:100dvh; overflow:hidden; }
 html[data-studio-scale="off"].studio-scale-managed .topbar,
 html[data-studio-scale="off"].studio-scale-managed .library,
 html[data-studio-scale="off"].studio-scale-managed .workflow-transfer-panel,

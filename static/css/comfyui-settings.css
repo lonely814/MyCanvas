@@ -87,7 +87,9 @@ body.studio-theme-dark .gnode.cat-controlnet rect { fill:#3a2410; stroke:#fb923c
 /* 浮窗参数编辑面板 */
 .popup-backdrop { position:absolute; inset:0; background:rgba(15,23,42,.35); border-radius:10px; z-index:5; }
 body.studio-theme-dark .popup-backdrop { background:rgba(0,0,0,.5); }
-.popup-panel { position:absolute; width:380px; max-height:70vh; background:var(--panel); border:1px solid var(--line-strong); border-radius:14px; box-shadow:0 24px 60px rgba(15,23,42,.22); z-index:10; display:flex; flex-direction:column; overflow:hidden; overscroll-behavior:contain; }
+/* 宽度取 min() 而非写死 380px：手机上预览容器只有约 360px 宽，固定 380px 会横向溢出被裁。
+   max-height 用 dvh 跟随可见区域，避免地址栏展开时底部按钮被截。 */
+.popup-panel { position:absolute; width:min(380px, 92vw); max-height:70vh; max-height:70dvh; background:var(--panel); border:1px solid var(--line-strong); border-radius:14px; box-shadow:0 24px 60px rgba(15,23,42,.22); z-index:10; display:flex; flex-direction:column; overflow:hidden; overscroll-behavior:contain; }
 body.studio-theme-dark .popup-panel { box-shadow:0 24px 60px rgba(0,0,0,.5); }
 .popup-head { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line); background:var(--soft); }
 .popup-icon { font-size:20px; line-height:1; flex:0 0 auto; }

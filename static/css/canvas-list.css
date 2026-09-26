@@ -52,15 +52,18 @@
 }
 
 * { box-sizing:border-box; }
-body { margin:0; height:100vh; overflow:hidden; background:var(--page); color:var(--text); font-family:'Inter',-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
+body { margin:0; height:100vh; height:100dvh; overflow:hidden; background:var(--page); color:var(--text); font-family:'Inter',-apple-system,sans-serif; -webkit-font-smoothing:antialiased; }
 
 /* ===== Workspace shell (two pane) ===== */
-.workspace { position:relative; display:flex; height:100vh; overflow:hidden; }
+/* dvh 与 body 保持一致：手机地址栏展开时 100vh 会取最高视口，导致底部被裁。
+   两处单位必须相同，否则 .workspace 与 body 的高度对不上（缩放下差一截）。 */
+.workspace { position:relative; display:flex; height:100vh; height:100dvh; overflow:hidden; }
 html[data-studio-scale="off"].studio-scale-managed .workspace {
     /* 标准化 zoom 下百分比宽度已按 zoom 换算，不能再除以 scale（会宽出 1/scale 倍、右侧被裁）；
        vh 单位不受 zoom 影响，高度仍需除以 scale 补偿 */
     width: 100%;
     height: calc(100vh / var(--studio-ui-scale, 1));
+    height: calc(100dvh / var(--studio-ui-scale, 1));
     zoom: var(--studio-ui-scale, 1);
 }
 

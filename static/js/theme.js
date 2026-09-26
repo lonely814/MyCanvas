@@ -53,11 +53,13 @@
             html.studio-ui-scaled body:not(.studio-scale-host) {
                 width: calc(100% / var(--studio-ui-scale)) !important;
                 min-height: calc(100vh / var(--studio-ui-scale)) !important;
+                min-height: calc(100dvh / var(--studio-ui-scale)) !important;
                 transform: scale(var(--studio-ui-scale));
                 transform-origin: 0 0;
             }
             html.studio-ui-scaled body.studio-scale-viewport:not(.studio-scale-host) {
                 height: calc(100vh / var(--studio-ui-scale)) !important;
+                height: calc(100dvh / var(--studio-ui-scale)) !important;
             }
             html.studio-ui-scaled body:not(.studio-scale-host) > .app-shell,
             html.studio-ui-scaled body:not(.studio-scale-host) > .shell,
@@ -67,9 +69,11 @@
             html.studio-ui-scaled body:not(.studio-scale-host) > .app-shell,
             html.studio-ui-scaled body:not(.studio-scale-host) > .shell {
                 height: calc(100vh / var(--studio-ui-scale)) !important;
+                height: calc(100dvh / var(--studio-ui-scale)) !important;
             }
             html.studio-ui-scaled body:not(.studio-scale-host) > .asset-page {
                 min-height: calc(100vh / var(--studio-ui-scale)) !important;
+                min-height: calc(100dvh / var(--studio-ui-scale)) !important;
             }
         `;
         document.head.appendChild(style);
