@@ -2814,7 +2814,7 @@ function renderMsGenBody(node){
         <div class="ms-content">
             <div class="prompt-list mt-2 mb-2"></div>
             ${msUsesImages ? `
-            <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">${tr('canvas.images')}</div>
+            <div class="node-muted text-[10px] font-bold uppercase tracking-widest mb-2">${tr('canvas.images')}</div>
             <div class="input-list ms-img-list"></div>
             ` : ''}
         </div>
@@ -6415,7 +6415,7 @@ function renderNode(node){
         const label = { queued:'排队中', running:'运行中', done:'完成', failed:'失败' }[node.runStatus] || '';
         return `<span class="node-run-status ${node.runStatus}"><span class="dot"></span>${escapeHtml(label)}${node._cascadeIdx?' '+node._cascadeIdx:''}</span>`;
     })() : '';
-    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton('${node.id}', event)" class="text-gray-300 hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
+    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton('${node.id}', event)" class="node-muted hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
     const body = document.createElement('div');
     body.className = 'node-body';
     if(node.type === 'image') {
@@ -6423,12 +6423,12 @@ function renderNode(node){
             const missing = isMissingAssetUrl(node.url);
             const mediaKind = mediaKindForNode(node);
             const isEditableImage = mediaKind === 'image' && !missing;
-            body.innerHTML = `<div class="image-preview-wrap">${missing ? missingAssetHtml(node.url) : canvasPreviewImgHtml(node.url, 768, 'draggable="false"')}</div><div class="image-caption text-[11px] text-gray-400 truncate">${escapeHtml(node.name || 'image')}${missing ? ` · ${langIsEn() ? 'missing' : '文件缺失'}` : ''}</div>`;
+            body.innerHTML = `<div class="image-preview-wrap">${missing ? missingAssetHtml(node.url) : canvasPreviewImgHtml(node.url, 768, 'draggable="false"')}</div><div class="image-caption node-muted text-[11px] truncate">${escapeHtml(node.name || 'image')}${missing ? ` · ${langIsEn() ? 'missing' : '文件缺失'}` : ''}</div>`;
             if(!missing && mediaKind !== 'image'){
                 const mediaHtml = mediaKind === 'video'
                     ? `<div class="media-card video-card">${canvasVideoPreviewHtml(node.url, 768, 'draggable="false" data-video-fallback-attrs="controls"')}<button class="canvas-video-play" type="button" title="播放"><i data-lucide="play"></i></button></div>`
                     : `<div class="media-card audio-card"><i data-lucide="file-audio" class="w-8 h-8"></i><div class="audio-title">${escapeHtml(node.name || 'Audio')}</div><div class="audio-sub">AUDIO</div><audio src="${escapeAttr(node.url)}" data-url="${escapeAttr(node.url)}" controls preload="metadata"></audio></div>`;
-                body.innerHTML = `<div class="image-preview-wrap">${mediaHtml}</div><div class="image-caption text-[11px] text-gray-400 truncate">${escapeHtml(node.name || nodeTitleForMedia(node))}</div>`;
+                body.innerHTML = `<div class="image-preview-wrap">${mediaHtml}</div><div class="image-caption node-muted text-[11px] truncate">${escapeHtml(node.name || nodeTitleForMedia(node))}</div>`;
             }
             const previewWrap = body.querySelector('.image-preview-wrap');
             const loadedImg = body.querySelector('img');
@@ -6534,7 +6534,7 @@ function renderNode(node){
         if(imgCount) parts.push(`${imgCount} ${tr('canvas.imageCount')}`);
         if(promptCount) parts.push(`${promptCount} ${tr('canvas.promptCount')}`);
         const text = parts.length ? `${parts.join(' · ')} ${tr('canvas.grouped')}` : tr('canvas.groupEmpty');
-        body.innerHTML = `<div class="text-[11px] text-gray-400">${text}</div>`;
+        body.innerHTML = `<div class="node-muted text-[11px]">${text}</div>`;
         const previewItems = groupImageItems(node);
         if(previewItems.length){
             const openGroupPreview = e => {
@@ -6557,7 +6557,7 @@ function renderNode(node){
     }
     if(node.type === 'promptGroup') {
         const promptNodes = (node.items || []).map(id => nodes.find(n => n.id === id)).filter(Boolean);
-        body.innerHTML = `<div class="text-[11px] text-gray-400">${promptNodes.length} ${tr('canvas.promptCount')} ${tr('canvas.grouped')}</div>`;
+        body.innerHTML = `<div class="node-muted text-[11px]">${promptNodes.length} ${tr('canvas.promptCount')} ${tr('canvas.grouped')}</div>`;
     }
     if(node.type === 'llm') body.appendChild(renderLLMBody(node));
     if(node.type === 'generator') body.appendChild(renderGeneratorBody(node));
@@ -8384,7 +8384,7 @@ function renderLLMNodePane(container, node){
 function renderLLMChatPane(container, node){
     const messages = node.messages || [];
     container.innerHTML = `
-        <div class="llm-chat-log">${messages.length ? messages.map((msg, mi) => `<div class="llm-bubble ${msg.role === 'user' ? 'user' : 'assistant'}" data-msg-idx="${mi}">${escapeHtml(msg.content || '')}${msg.role === 'assistant' ? `<button class="llm-bubble-copy" type="button" title="复制"><i data-lucide="copy" style="width:11px;height:11px;display:inline-block;vertical-align:middle"></i></button>` : ''}</div>`).join('') : `<div class="text-[11px] text-gray-300">${tr('canvas.startChat')}</div>`}</div>
+        <div class="llm-chat-log">${messages.length ? messages.map((msg, mi) => `<div class="llm-bubble ${msg.role === 'user' ? 'user' : 'assistant'}" data-msg-idx="${mi}">${escapeHtml(msg.content || '')}${msg.role === 'assistant' ? `<button class="llm-bubble-copy" type="button" title="复制"><i data-lucide="copy" style="width:11px;height:11px;display:inline-block;vertical-align:middle"></i></button>` : ''}</div>`).join('') : `<div class="node-muted text-[11px]">${tr('canvas.startChat')}</div>`}</div>
         <textarea class="llm-chat-input mt-2" rows="2" placeholder="${tr('canvas.chatInput')}">${escapeHtml(node.chatInput || '')}</textarea>
         <button class="llm-run mt-2" ${node.running ? 'disabled' : ''}><i data-lucide="send" class="w-4 h-4"></i>${node.running ? tr('canvas.sending') : 'Send'}</button>
     `;
@@ -8563,7 +8563,7 @@ function renderGeneratorBody(node){
     normalizeApiNodeSizeChoice(node);
     wrap.innerHTML = `
         <div class="prompt-list mb-3"></div>
-        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">${tr('canvas.images')}</div>
+        <div class="node-muted text-[10px] font-bold uppercase tracking-widest mb-2">${tr('canvas.images')}</div>
         <div class="input-list"></div>
         <div class="gen-settings">
             <div class="gen-settings-row">
@@ -8973,7 +8973,7 @@ function renderVideoBody(node){
     wrap.innerHTML = `
         <div class="prompt-list mb-3"></div>
         <div class="video-input-head">
-            <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Media</div>
+            <div class="node-muted text-[10px] font-bold uppercase tracking-widest">Media</div>
             <div class="video-input-actions">
                 <button type="button" class="tool-btn" data-video-manual-url title="手动输入视频 URL"><i data-lucide="link" class="w-4 h-4"></i><span>输入网址</span></button>
                 <button type="button" class="tool-btn" data-video-temp-sh ${node.tempShUploading ? 'disabled' : ''} title="上传当前输入视频到云端直链"><i data-lucide="upload-cloud" class="w-4 h-4"></i><span>${node.tempShUploading ? '上传中...' : '上传云端'}</span></button>
@@ -9670,11 +9670,11 @@ function bindMiniMaxWorkbench(wrap, node){
 }
 function renderPromptPreview(container, promptInputs){
     if(!container) return;
-    container.innerHTML = promptInputs.length ? `<div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">Prompts</div>${promptInputs.map(src => `<div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 line-clamp-2">${escapeHtml(src.label)}</div>`).join('')}` : '';
+    container.innerHTML = promptInputs.length ? `<div class="node-muted text-[10px] font-bold uppercase tracking-widest mb-1">Prompts</div>${promptInputs.map(src => `<div class="text-[11px] text-slate-500 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 line-clamp-2">${escapeHtml(src.label)}</div>`).join('')}` : '';
 }
 function renderImageInputList(list, node, imageInputs, emptyText=null){
     if(!list) return;
-    list.innerHTML = imageInputs.length ? '' : `<div class="text-[11px] text-gray-300 py-2">${escapeHtml(emptyText || tr('canvas.inputImagesEmpty'))}</div>`;
+    list.innerHTML = imageInputs.length ? '' : `<div class="node-muted text-[11px] py-2">${escapeHtml(emptyText || tr('canvas.inputImagesEmpty'))}</div>`;
     imageInputs.forEach((src, i) => {
         const item = document.createElement('div');
         item.className = 'input-item';
@@ -9702,7 +9702,7 @@ function renderImageInputList(list, node, imageInputs, emptyText=null){
 }
 function renderVideoImageInputs(list, node, imageInputs){
     if(!list) return;
-    list.innerHTML = imageInputs.length ? '' : `<div class="text-[11px] text-gray-300 py-2">${tr('canvas.groupEmpty')}</div>`;
+    list.innerHTML = imageInputs.length ? '' : `<div class="node-muted text-[11px] py-2">${tr('canvas.groupEmpty')}</div>`;
     imageInputs.forEach((src, i) => {
         const item = document.createElement('div');
         item.className = 'input-item video-input-item';
@@ -9870,7 +9870,7 @@ function renderComfyBody(node){
         <div class="comfy-content">
             <div class="prompt-list"></div>
             <div class="comfy-images ${(mode === 'text' || (mode === 'custom' && !mediaFieldCount)) ? 'hidden' : ''}">
-                <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">${mode === 'custom' ? `Media · Images ${imageFieldCount} · Videos ${videoFieldCount} · Audio ${audioFieldCount}` : 'Images'}</div>
+                <div class="node-muted text-[10px] font-bold uppercase tracking-widest">${mode === 'custom' ? `Media · Images ${imageFieldCount} · Videos ${videoFieldCount} · Audio ${audioFieldCount}` : 'Images'}</div>
                 <div class="input-list mt-2"></div>
             </div>
         </div>
@@ -9905,7 +9905,7 @@ function renderComfyBody(node){
     return wrap;
 }
 function renderComfyImages(list, node, imageInputs){
-    list.innerHTML = imageInputs.length ? '' : `<div class="text-[11px] text-gray-300 py-2">${tr('canvas.groupEmpty')}</div>`;
+    list.innerHTML = imageInputs.length ? '' : `<div class="node-muted text-[11px] py-2">${tr('canvas.groupEmpty')}</div>`;
     imageInputs.forEach((src, i) => {
         const item = document.createElement('div');
         item.className = 'input-item';
@@ -10520,7 +10520,7 @@ function renderRhBody(node){
         </div>
         <div class="rh-prompt-list"></div>
         <div class="rh-media-section">
-            <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">${tr('canvas.rhInputs')}</div>
+            <div class="node-muted text-[10px] font-bold uppercase tracking-widest mb-2">${tr('canvas.rhInputs')}</div>
             <div class="input-list rh-input-list"></div>
         </div>
         ${mode === 'model' ? rhModelSettingsHtml(node) : ''}
@@ -10680,7 +10680,7 @@ function renderRhInputs(list, node, media){
     if(!list) return;
     const refs = media.refs || [];
     if(!refs.length){
-        list.innerHTML = `<div class="text-[11px] text-gray-300 py-2">${tr('canvas.groupEmpty')}</div>`;
+        list.innerHTML = `<div class="node-muted text-[11px] py-2">${tr('canvas.groupEmpty')}</div>`;
         return;
     }
     list.innerHTML = '';
@@ -12696,7 +12696,7 @@ function renderLTXDirectorBody(node){
             <label class="field"><span class="setting-title">${tr('canvas.height')}</span><input class="setting-input" data-ltx-height type="number" min="0" max="8192" step="32" title="0 = auto"></label>
         </div>
         <div class="ltx-director-timeline-host" data-ltx-timeline-host></div>
-        <div class="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">${tr('canvas.ltxLinkedImages')} · ${imageInputs.length}</div>
+        <div class="node-muted text-[10px] font-bold uppercase tracking-widest mt-1">${tr('canvas.ltxLinkedImages')} · ${imageInputs.length}</div>
         <div class="input-list mt-1"></div>
         <div class="gen-run-row">
             <button class="comfy-run ltx-run ${node.running ? 'running' : ''}" ${node.running ? 'disabled' : ''}><i data-lucide="film" class="w-4 h-4"></i>${node.running ? tr('canvas.ltxRunning') : tr('canvas.ltxRun')}</button>

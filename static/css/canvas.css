@@ -35,7 +35,7 @@ html[data-studio-scale="off"].studio-scale-managed .asset-manager-panel {
 .canvas-nav { flex:0 1 auto; width:max-content; max-width:min(360px, calc(100vw - 48px)); padding:8px 10px 8px 8px; display:flex; align-items:center; gap:8px; }
 .canvas-nav-meta { min-width:0; display:flex; flex-direction:column; gap:2px; }
 .current-canvas-title { max-width:260px; color:var(--text); font-size:12px; font-weight:800; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.current-canvas-time { max-width:260px; color:var(--faint); font-size:10px; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.current-canvas-time { max-width:260px; color:var(--muted); font-size:10px; font-weight:400; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .canvas-list { display:flex; flex-direction:column; gap:8px; overflow:auto; max-height:360px; }
 .canvas-item { position:relative; width:100%; aspect-ratio:1/1; text-align:left; border:1px solid #edf0f3; background:#fff; border-radius:14px; padding:0; transition:all .18s var(--ease); cursor:pointer; }
 .canvas-item:hover { border-color:#cbd5e1; box-shadow:0 1px 3px rgba(15,23,42,.06); }
@@ -440,7 +440,13 @@ body.canvas-selecting .node .llm-bubble { pointer-events:none !important; }
 .node.sized.image-node .node-body { display:flex; flex-direction:column; gap:8px; }
 .node.sized.image-node img { flex:1; min-height:0; height:100%; max-height:none; }
 .node.sized.image-node video { width:100%; height:100%; object-fit:contain; }
-.image-caption { flex:0 0 auto; }
+.image-caption { flex:0 0 auto; color:var(--muted); }
+/* 次要说明文字（空态提示、分组计数、字段小标题等）。
+   这些位置原先用 Tailwind 的 text-gray-300/400 硬编码灰色：
+   浅色底上 #d1d5db 对比度只有 1.47、#9ca3af 只有 2.54，远低于可读下限 4.5；
+   深色主题下又得靠 theme.css 逐条 !important 覆盖回来。
+   统一走 --muted（浅色 #64748b=4.76，深色 #cbd5e1=12.02），两套主题同时成立。 */
+.node-muted { color:var(--muted); }
 .blank-image { height:190px; border:1px dashed #cbd5e1; border-radius:16px; background:#f8fafc; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; color:#94a3b8; cursor:pointer; transition:all .2s var(--ease); }
 .node.sized .blank-image { height:100%; min-height:72px; }
 .blank-image:hover,.blank-image.drag-over { border-color:#111827; color:#111827; background:#fff; }
@@ -997,7 +1003,7 @@ input[type=range].canvas-range::-webkit-slider-runnable-track { height:3px; bord
 .minimap-node { position:absolute; border-radius:3px; background:rgba(15,23,42,.64); border:1px solid rgba(255,255,255,.32); min-width:2px; min-height:2px; }
 .minimap-node.selected { background:#111827; box-shadow:0 0 0 1px rgba(255,255,255,.7); }
 .minimap-viewport { position:absolute; border:1.5px solid #111827; background:rgba(17,24,39,.08); border-radius:5px; box-shadow:0 0 0 1px rgba(255,255,255,.75); pointer-events:none; }
-.minimap-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--faint); font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; pointer-events:none; }
+.minimap-empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; pointer-events:none; }
 body.theme-dark .minimap-node { background:rgba(248,250,252,.7); border-color:rgba(15,23,42,.35); }
 body.theme-dark .minimap-node.selected { background:#fff; box-shadow:0 0 0 1px rgba(15,23,42,.8); }
 body.theme-dark .minimap-viewport { border-color:#f8fafc; background:rgba(248,250,252,.1); box-shadow:0 0 0 1px rgba(15,23,42,.8); }
