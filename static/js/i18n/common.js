@@ -4,6 +4,7 @@
         "common.apiSettings": { zh: "API 设置", en: "API Settings" },
         "common.comfyuiSettings": { zh: "工作流设置", en: "Workflow Settings" },
         "common.darkMode": { zh: "黑夜模式", en: "Dark Mode" },
+        "common.blackMode": { zh: "纯黑模式", en: "Black Mode" },
         "common.lightMode": { zh: "白天模式", en: "Light Mode" },
         "common.language": { zh: "中文", en: "English" },
         "common.cancel": { zh: "取消", en: "Cancel" },

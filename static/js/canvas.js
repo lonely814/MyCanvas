@@ -665,12 +665,22 @@ function saveLocalViewport(){
     } catch(e) {}
 }
 function applyTheme(theme){
-    const dark = theme === 'dark';
+    // 与 theme.js 保持同一套三态判定：light / dark（深蓝）/ black（纯黑）。
+    // 这里原先只判 dark，把 black 当成亮色，会在 studio-theme-change 事件里
+    // 把 theme.js 刚设好的深色类抹掉，结果纯黑主题渲染成亮色。
+    // 刻意不委托给 StudioTheme.apply：那会再派发一次 studio-theme-change，
+    // 而本文件正在监听该事件，形成无限递归。
+    const next = (theme === 'dark' || theme === 'black') ? theme : 'light';
+    const dark = next !== 'light';
+    const black = next === 'black';
     document.documentElement.classList.toggle('studio-theme-dark', dark);
     document.documentElement.classList.toggle('theme-dark', dark);
+    document.documentElement.classList.toggle('theme-black', black);
     document.body.classList.toggle('studio-theme-dark', dark);
     document.body.classList.toggle('theme-dark', dark);
+    document.body.classList.toggle('theme-black', black);
     shell.classList.toggle('theme-dark', dark);
+    shell.classList.toggle('theme-black', black);
 }
 function applyQuickToolbarState(){
     const toolbar = document.getElementById('quickToolbar');

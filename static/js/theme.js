@@ -3,19 +3,30 @@
     const LEGACY_KEY = 'canvas_theme';
     const SCALE_KEY = 'studio_ui_scale_mode';
     const SCALE_OPTIONS = ['auto', '60', '65', '70', '75', '80', '85', '90', '95', '100', '115', '125', '140'];
+    // 三套主题：light / dark（深蓝）/ black（纯黑）。
+    // black 是 dark 的超集：沿用同一套深色结构类，再额外挂 theme-black，
+    // 由 theme-black.css 把冷色逐条中性化。这样新增主题不必复制整套深色规则。
+    const THEMES = ['light', 'dark', 'black'];
+
+    function normalizeTheme(theme){
+        return THEMES.includes(theme) ? theme : 'light';
+    }
 
     function currentTheme(){
-        return localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || 'light';
+        return normalizeTheme(localStorage.getItem(KEY) || localStorage.getItem(LEGACY_KEY) || 'light');
     }
 
     function applyTheme(theme){
-        const next = theme === 'dark' ? 'dark' : 'light';
-        const dark = next === 'dark';
+        const next = normalizeTheme(theme);
+        const dark = next !== 'light';
+        const black = next === 'black';
         document.documentElement.classList.toggle('studio-theme-dark', dark);
         document.documentElement.classList.toggle('theme-dark', dark);
+        document.documentElement.classList.toggle('theme-black', black);
         if(document.body){
             document.body.classList.toggle('studio-theme-dark', dark);
             document.body.classList.toggle('theme-dark', dark);
+            document.body.classList.toggle('theme-black', black);
         }
         window.dispatchEvent(new CustomEvent('studio-theme-change', { detail: { theme: next } }));
     }
@@ -231,13 +242,19 @@
 
     window.StudioTheme = {
         key: KEY,
+        themes: THEMES.slice(),
         get: currentTheme,
         apply: applyTheme,
         set(theme){
-            const next = theme === 'dark' ? 'dark' : 'light';
+            const next = normalizeTheme(theme);
             localStorage.setItem(KEY, next);
             localStorage.setItem(LEGACY_KEY, next);
             applyTheme(next);
+        },
+        // 按 light → dark → black → light 循环，供仅有一个切换按钮的界面使用
+        next(){
+            const idx = THEMES.indexOf(currentTheme());
+            return THEMES[(idx + 1) % THEMES.length];
         }
     };
 

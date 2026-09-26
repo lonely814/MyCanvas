@@ -9,20 +9,22 @@
         (function(){
             try {
                 var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'light';
-                if(theme === 'dark') {
+                if(theme === 'dark' || theme === 'black') {
                     document.documentElement.classList.add('studio-theme-dark');
                     document.documentElement.classList.add('theme-dark');
+                    if(theme === 'black') document.documentElement.classList.add('theme-black');
                 }
             } catch(e) {}
         })();
     </script>
     <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.09.26.1787881168"></script>
     <script src="/static/vendor/js/lucide.js?v=2026.09.26.1787881168"></script>
-    <script src="/static/js/theme.js?v=2026.09.26.1787881168"></script>
+    <script src="/static/js/theme.js?v=2026.09.26.1790428780"></script>
     <script src="/static/js/touch-mouse.js?v=2026.09.26.1787881168"></script>
-    <script src="/static/js/i18n.js?v=2026.09.26.1790359933"></script>
-    <link rel="stylesheet" href="/static/css/canvas.css?v=2026.09.26.1790426856">
+    <script src="/static/js/i18n.js?v=2026.09.26.1790428942"></script>
+    <link rel="stylesheet" href="/static/css/canvas.css?v=2026.09.26.1790427072">
     <link rel="stylesheet" href="/static/css/theme.css?v=2026.09.26.1787881168">
+    <link rel="stylesheet" href="/static/css/theme-black.css?v=2026.09.26.1790429487">
 </head>
 <body>
     <div id="shell" class="shell no-canvas">
@@ -362,6 +364,6 @@
     </div>
 
     <script src="/static/js/ltx-director-timeline.js?v=2026.09.26.1787881168"></script>
-    <script src="/static/js/canvas.js?v=2026.09.26.1790426954"></script>
+    <script src="/static/js/canvas.js?v=2026.09.26.1790429127"></script>
 </body>
 </html>

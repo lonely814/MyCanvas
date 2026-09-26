@@ -9,16 +9,18 @@
         (function(){
             try {
                 var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'light';
-                if(theme === 'dark') {
+                if(theme === 'dark' || theme === 'black') {
                     document.documentElement.classList.add('studio-theme-dark');
                     document.documentElement.classList.add('theme-dark');
+                    if(theme === 'black') document.documentElement.classList.add('theme-black');
                 }
             } catch(e) {}
         })();
     </script>
     <script src="/static/vendor/js/lucide.js?v=2026.09.26.1787881168"></script>
-    <script src="/static/js/theme.js?v=2026.09.26.1787881168"></script>
+    <script src="/static/js/theme.js?v=2026.09.26.1790428780"></script>
     <link rel="stylesheet" href="/static/css/theme.css?v=2026.09.26.1787881168">
+    <link rel="stylesheet" href="/static/css/theme-black.css?v=2026.09.26.1790429487">
     <link rel="stylesheet" href="/static/css/asset-manager.css?v=2026.09.26.1787881168">
 </head>
 <body>

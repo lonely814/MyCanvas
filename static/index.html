@@ -15,17 +15,18 @@
         (function(){
             try {
                 var theme = localStorage.getItem('studio_theme') || localStorage.getItem('canvas_theme') || 'light';
-                if(theme === 'dark') {
+                if(theme === 'dark' || theme === 'black') {
                     document.documentElement.classList.add('studio-theme-dark');
                     document.documentElement.classList.add('theme-dark');
+                    if(theme === 'black') document.documentElement.classList.add('theme-black');
                 }
                 document.documentElement.classList.add('studio-route-booting');
             } catch(e) {}
         })();
     </script>
     <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.09.26.1787881168"></script>
-    <script src="/static/js/theme.js?v=2026.09.26.1787881168"></script>
-    <script src="/static/js/i18n.js?v=2026.09.26.1790359933"></script>
+    <script src="/static/js/theme.js?v=2026.09.26.1790428780"></script>
+    <script src="/static/js/i18n.js?v=2026.09.26.1790428942"></script>
     <style>
         @import url('/static/vendor/css/fonts.css?v=2026.09.26.1787881168');
 
@@ -1117,6 +1118,7 @@
             max-width: 0;
         }
     </style>
+<link rel="stylesheet" href="/static/css/theme-black.css?v=2026.09.26.1790429487">
 </head>
 
 <body>
@@ -1214,21 +1216,26 @@
                     </svg>
                 </button>
                 <div class="settings-fold-group is-collapsed" id="settings-fold-group">
-                    <button class="side-pill" onclick="toggleTheme()" id="theme-toggle-btn" type="button" title="切换夜间模式">
-                        <svg id="icon-moon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                        <svg id="icon-sun" style="display:none" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
+                    <button class="side-pill" onclick="toggleTheme()" id="theme-toggle-btn" type="button" title="切换主题（白天 / 深蓝 / 纯黑）">
+                        <span class="side-pill-icons">
+                            <svg id="icon-moon" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                            </svg>
+                            <svg id="icon-sun" style="display:none" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="5"></circle>
+                                <line x1="12" y1="1" x2="12" y2="3"></line>
+                                <line x1="12" y1="21" x2="12" y2="23"></line>
+                                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                                <line x1="1" y1="12" x2="3" y2="12"></line>
+                                <line x1="21" y1="12" x2="23" y2="12"></line>
+                                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                            </svg>
+                            <svg id="icon-dot" style="display:none" fill="currentColor" stroke="none" viewBox="0 0 24 24">
+                                <circle cx="12" cy="12" r="7"></circle>
+                            </svg>
+                        </span>
                         <span class="side-pill-text" data-i18n="common.darkMode">黑夜模式</span>
                     </button>
                     <button class="side-pill" onclick="toggleLanguage()" id="lang-toggle-btn" type="button" title="Language">
@@ -1271,15 +1278,15 @@
         </script>
 
         <main class="stage">
-            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.09.26.1790359991" class="active" scrolling="yes"></iframe>
-            <iframe id="frame-enhance" data-src="/static/enhance.html?v=2026.09.26.1790359991" scrolling="yes"></iframe>
-            <iframe id="frame-klein" data-src="/static/klein.html?v=2026.09.26.1790359991" scrolling="yes"></iframe>
-            <iframe id="frame-angle" data-src="/static/angle.html?v=2026.09.26.1790359991" scrolling="yes"></iframe>
-            <iframe id="frame-online" data-src="/static/online.html?v=2026.09.26.1790359991" scrolling="yes"></iframe>
-            <iframe id="frame-asset-manager" data-src="/static/asset-manager.html?v=2026.09.26.1790356888" scrolling="yes"></iframe>
-            <iframe id="frame-api-settings" data-src="/static/api-settings.html?v=2026.09.26.1790359991" scrolling="yes"></iframe>
-            <iframe id="frame-comfyui-settings" data-src="/static/comfyui-settings.html?v=2026.09.26.1790359991" scrolling="yes"></iframe>
-            <iframe id="frame-canvas" data-src="/static/canvas-list.html?v=2026.09.26.1790359991" scrolling="yes"></iframe>
+            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.09.26.1790428942" class="active" scrolling="yes"></iframe>
+            <iframe id="frame-enhance" data-src="/static/enhance.html?v=2026.09.26.1790429547" scrolling="yes"></iframe>
+            <iframe id="frame-klein" data-src="/static/klein.html?v=2026.09.26.1790428942" scrolling="yes"></iframe>
+            <iframe id="frame-angle" data-src="/static/angle.html?v=2026.09.26.1790429547" scrolling="yes"></iframe>
+            <iframe id="frame-online" data-src="/static/online.html?v=2026.09.26.1790428942" scrolling="yes"></iframe>
+            <iframe id="frame-asset-manager" data-src="/static/asset-manager.html?v=2026.09.26.1790429547" scrolling="yes"></iframe>
+            <iframe id="frame-api-settings" data-src="/static/api-settings.html?v=2026.09.26.1790429547" scrolling="yes"></iframe>
+            <iframe id="frame-comfyui-settings" data-src="/static/comfyui-settings.html?v=2026.09.26.1790429547" scrolling="yes"></iframe>
+            <iframe id="frame-canvas" data-src="/static/canvas-list.html?v=2026.09.26.1790429547" scrolling="yes"></iframe>
 
         </main>
     </div>
@@ -1540,26 +1547,29 @@
         function updateThemeIcon(theme) {
             const moon = document.getElementById('icon-moon');
             const sun = document.getElementById('icon-sun');
-            const dark = theme === 'dark';
-            if (dark) {
-                moon.style.display = 'none';
-                sun.style.display = 'block';
-            } else {
-                moon.style.display = 'block';
-                sun.style.display = 'none';
-            }
-            // 标签随当前主题切换：暗色时提示切到白天，亮色时提示切到黑夜
+            const dot = document.getElementById('icon-dot');
+            const isLight = theme === 'light';
+            // 三套主题共用两个图标：亮色显示月亮（提示切到暗），暗色显示太阳（提示切到亮）；
+            // 黑色主题额外显示一个实心圆点做区分。
+            moon.style.display = isLight ? 'block' : 'none';
+            sun.style.display = isLight ? 'none' : 'block';
+            if (dot) dot.style.display = (theme === 'black') ? 'block' : 'none';
+            // 标签提示的是「点一下会变成什么」，三态循环：白天 → 深蓝 → 纯黑 → 白天
             const label = document.querySelector('#theme-toggle-btn .side-pill-text');
             if (label) {
-                const key = dark ? 'common.lightMode' : 'common.darkMode';
+                const key = theme === 'light' ? 'common.darkMode'
+                          : (theme === 'dark' ? 'common.blackMode' : 'common.lightMode');
                 label.dataset.i18n = key;
                 if (window.StudioI18n) label.textContent = window.StudioI18n.t(key);
             }
         }
 
         function toggleTheme() {
-            const current = window.StudioTheme ? window.StudioTheme.get() : 'light';
-            broadcastTheme(current === 'dark' ? 'light' : 'dark');
+            // 走三态循环：light → dark（深蓝）→ black（纯黑）→ light
+            const next = window.StudioTheme
+                ? (window.StudioTheme.next ? window.StudioTheme.next() : 'light')
+                : 'light';
+            broadcastTheme(next);
         }
 
         function toggleLanguage() {
