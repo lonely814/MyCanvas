@@ -3272,15 +3272,80 @@ function addOutputNode(point){
     const p = point || defaultPoint(260, 0);
     return addNode({id:uid('out'), type:'output', x:p.x, y:p.y, images:[]});
 }
+// 量出菜单内容所需高度，并把列表压到可用高度；返回可用的垂直空间。
+// 解除高度限制再量，否则量到的是被 CSS 压过的值。
+function measureFloatingMenu(el, avail){
+    const list = el.querySelector('.create-menu-list');
+    el.style.maxHeight = '';
+    if(list) list.style.maxHeight = 'none';
+    const chromeH = Math.max(0, el.offsetHeight - (list ? list.offsetHeight : 0));
+    const needH = chromeH + (list ? list.scrollHeight : 0);
+    // 空间不够才限制列表高度；搜索框固定在顶部不被压掉
+    if(list && needH > avail){
+        list.style.maxHeight = `${Math.max(96, avail - chromeH)}px`;
+    }
+    return needH;
+}
+// 供"锚定在节点旁"的菜单使用：水平垂直都夹进视口，不翻转（否则会离开所属节点）。
+function clampFloatingMenu(el, left, top){
+    if(!el) return;
+    const MARGIN = 10;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    el.style.maxHeight = '';
+    const menuW = el.offsetWidth || 214;
+    const clampedLeft = Math.max(MARGIN, Math.min(left, vw - menuW - MARGIN));
+    const clampedTop = Math.max(MARGIN, top);
+    el.style.left = `${Math.round(clampedLeft)}px`;
+    el.style.top = `${Math.round(clampedTop)}px`;
+    measureFloatingMenu(el, vh - clampedTop - MARGIN);
+}
+// 浮层菜单统一定位（跟随鼠标）：夹在视口内，空间不足时向上翻转，并把列表高度压到可用空间。
+// 原先直接写 clientX/clientY，靠边或靠下打开时菜单会被窗口边缘截断，用户得先滚动才能看全。
+function placeFloatingMenu(el, clientX, clientY){
+    if(!el) return;
+    const MARGIN = 10;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    // 量内容真实高度前先解除高度限制，否则量到的是被上一次压过的值
+    el.style.maxHeight = '';
+    const list = el.querySelector('.create-menu-list');
+    if(list) list.style.maxHeight = 'none';
+    const menuW = el.offsetWidth || 214;
+    const chromeH = Math.max(0, el.offsetHeight - (list ? list.offsetHeight : 0));
+    const needH = chromeH + (list ? list.scrollHeight : 0);
+
+    // 水平：右侧放不下就左移，仍越界则贴边
+    const left = Math.max(MARGIN, Math.min(clientX, vw - menuW - MARGIN));
+
+    // 垂直：先定下最终 top，再根据它限制列表高度。
+    // 顺序是关键——若先按"点击处下方的空间"压高度、之后才修正 top，
+    // 会出现"明明放得下却带滚动条"的情况（居中打开时实测如此）。
+    let top = clientY;
+    if(needH > vh - 2 * MARGIN){
+        // 整个视口都装不下：贴顶，剩下的交给列表滚动
+        top = MARGIN;
+    } else if(top + needH + MARGIN > vh){
+        // 下方装不下：优先向上展开；上方也不够才贴底
+        top = Math.max(MARGIN, clientY - needH);
+        if(top + needH + MARGIN > vh) top = vh - needH - MARGIN;
+    }
+    top = Math.max(MARGIN, top);
+
+    // 只在最终位置的空间确实不够时，才压缩列表高度（搜索框在顶部不会被压掉）
+    const avail = vh - top - MARGIN;
+    if(list && needH > avail){
+        list.style.maxHeight = `${Math.max(96, avail - chromeH)}px`;
+    }
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+}
 function openCreateMenu(clientX, clientY){
     menuPoint = screenToWorld(clientX, clientY);
     closeLinkCreateMenu();
     renderCreateMenu('');  // 每次打开重建：语言切换后名称与分组标题才会跟着变
     const search = document.getElementById('createMenuSearch');
     if(search) search.value = '';
-    createMenu.style.left = `${clientX}px`;
-    createMenu.style.top = `${clientY}px`;
     createMenu.classList.add('open');
+    placeFloatingMenu(createMenu, clientX, clientY);
     refreshIconsWithin(createMenu);
     // 打开即聚焦搜索框，键盘可直接筛类型
     if(search) setTimeout(() => search.focus(), 0);
@@ -3330,9 +3395,8 @@ function openLinkCreateMenu(originId, originKind, clientX, clientY){
     linkCreateState = state;
     createMenu.classList.remove('open');
     linkCreateMenu.innerHTML = options.map(opt => `<button class="menu-btn" data-link-create="${escapeAttr(opt.type)}"><i data-lucide="${escapeAttr(opt.icon)}" class="w-4 h-4"></i><span>${escapeHtml(opt.label)}</span></button>`).join('');
-    linkCreateMenu.style.left = `${clientX}px`;
-    linkCreateMenu.style.top = `${clientY}px`;
     linkCreateMenu.classList.add('open');
+    placeFloatingMenu(linkCreateMenu, clientX, clientY);
     linkCreateMenu.querySelectorAll('[data-link-create]').forEach(btn => {
         btn.onclick = e => {
             e.stopPropagation();
@@ -3371,13 +3435,11 @@ function openGeneratorNodeMenu(nodeId, clientX, clientY){
     nodeOutputMenu.innerHTML = `<div class="menu-section-title">添加输出</div>${buttonsHtml(outputOptions, 'out')}`;
     const inputLeft = Math.max(10, (rect?.left || clientX) - 158);
     const outputLeft = Math.min(window.innerWidth - 158, (rect?.right || clientX) + 10);
-    const menuTop = Math.max(10, Math.min(window.innerHeight - 260, (rect?.top || clientY) + 36));
-    nodeInputMenu.style.left = `${inputLeft}px`;
-    nodeInputMenu.style.top = `${menuTop}px`;
-    nodeOutputMenu.style.left = `${outputLeft}px`;
-    nodeOutputMenu.style.top = `${menuTop}px`;
+    const menuTop = Math.max(10, (rect?.top || clientY) + 36);
     nodeInputMenu.classList.add('open');
     nodeOutputMenu.classList.add('open');
+    clampFloatingMenu(nodeInputMenu, inputLeft, menuTop);
+    clampFloatingMenu(nodeOutputMenu, outputLeft, menuTop);
     [nodeInputMenu, nodeOutputMenu].forEach(menu => menu.querySelectorAll('[data-link-create]').forEach(btn => {
         btn.onclick = e => {
             e.stopPropagation();
@@ -3411,9 +3473,8 @@ function openImageNodeMenu(nodeId, clientX, clientY){
         ${canEdit ? `<button class="menu-btn" data-image-edit="${escapeAttr(nodeId)}"><i data-lucide="pencil" class="w-4 h-4"></i><span>编辑</span></button>` : ''}
         <button class="menu-btn" data-image-replace="${escapeAttr(nodeId)}"><i data-lucide="image-plus" class="w-4 h-4"></i><span>替换</span></button>
     `;
-    imageNodeMenu.style.left = `${clientX}px`;
-    imageNodeMenu.style.top = `${clientY}px`;
     imageNodeMenu.classList.add('open');
+    placeFloatingMenu(imageNodeMenu, clientX, clientY);
     const previewBtn = imageNodeMenu.querySelector('[data-image-preview]');
     if(previewBtn){
         previewBtn.onclick = e => {
@@ -3459,10 +3520,8 @@ function openOutputNodeMenu(nodeId, clientX, clientY){
         <div class="menu-section-title">${tr('canvas.outputFileActions')}</div>
         <button class="menu-btn" data-output-download="${escapeAttr(nodeId)}" ${downloadableCount ? '' : 'disabled'}><i data-lucide="download" class="w-4 h-4"></i><span>${tr('canvas.outputDownloadAllImages')}</span></button>
     `;
-    const menuWidth = 260;
-    imageNodeMenu.style.left = `${Math.max(10, Math.min(window.innerWidth - menuWidth - 10, clientX))}px`;
-    imageNodeMenu.style.top = `${clientY}px`;
     imageNodeMenu.classList.add('open');
+    clampFloatingMenu(imageNodeMenu, clientX, clientY);
     const convertBtn = imageNodeMenu.querySelector('[data-output-convert]');
     if(convertBtn){
         convertBtn.onclick = e => {
