@@ -591,6 +591,10 @@ async def create_canvas_image_task(payload: OnlineImageRequest):
 
         }
 
+        canvas_task_prune_locked()
+
+        canvas_task_save_locked()
+
     asyncio.create_task(run_canvas_image_task(task_id, payload))
 
     return {"task_id": task_id, "status": "queued"}
@@ -640,6 +644,10 @@ async def create_canvas_comfy_task(payload: GenerateRequest):
             "workflow_json": payload.workflow_json,
 
         }
+
+        canvas_task_prune_locked()
+
+        canvas_task_save_locked()
 
     asyncio.create_task(run_canvas_comfy_task(task_id, payload))
 

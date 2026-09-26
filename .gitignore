@@ -13,4 +13,6 @@ data/canvases/
 data/conversations/
 data/projects.json
 data/prompt_libraries.json
+# 画布任务状态：落盘只为重启后仍能查到任务，属运行时数据
+data/canvas_tasks.json
 .venv/

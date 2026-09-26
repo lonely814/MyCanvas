@@ -1809,6 +1809,74 @@ class ImageTaskQueryRequest(BaseModel):
 
 CANVAS_TASKS: Dict[str, Dict[str, Any]] = {}
 CANVAS_TASK_LOCK = Lock()
+# 画布任务原本只存在内存里：进程一重启就全部蒸发，前端轮询拿到 404 只能提示
+# "后端已重启，任务状态已丢失"；而且这个字典没有任何清理，长期运行只增不减。
+# 生成结果本身已落盘（save_ai_image_to_output / save_video_bytes_to_output），
+# 所以这里只需要持久化轻量的任务元数据与结果 URL。
+CANVAS_TASKS_FILE = os.path.join(DATA_DIR, "canvas_tasks.json")
+CANVAS_TASK_TTL = float(os.getenv("CANVAS_TASK_TTL", str(24 * 3600)))  # 完成任务保留 24h
+CANVAS_TASK_MAX = int(os.getenv("CANVAS_TASK_MAX", "500"))
+
+def canvas_task_load():
+    """启动时把上次的任务状态读回内存，让刷新/重启后仍能查到已完成的任务。"""
+    try:
+        if not os.path.exists(CANVAS_TASKS_FILE):
+            return
+        with open(CANVAS_TASKS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+        now = time.time()
+        for task_id, task in (data.items() if isinstance(data, dict) else []):
+            if not isinstance(task, dict):
+                continue
+            # 重启时还在 queued/running 的任务，其协程已随进程消失，标记为失败而不是永远转圈
+            if task.get("status") in ("queued", "running"):
+                task["status"] = "failed"
+                task["error"] = "服务重启，任务已中断，请重新生成"
+                task["updated_at"] = now
+            if now - float(task.get("updated_at") or 0) <= CANVAS_TASK_TTL:
+                CANVAS_TASKS[task_id] = task
+    except Exception as e:
+        print(f"读取画布任务状态失败: {e}")
+
+def canvas_task_save_locked():
+    """调用方必须已持有 CANVAS_TASK_LOCK。写入失败不应影响生成流程本身。"""
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        tmp = CANVAS_TASKS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(CANVAS_TASKS, f, ensure_ascii=False)
+        os.replace(tmp, CANVAS_TASKS_FILE)
+    except Exception as e:
+        print(f"保存画布任务状态失败: {e}")
+
+def canvas_task_prune_locked():
+    """调用方必须已持有 CANVAS_TASK_LOCK。按 TTL 与总量上限淘汰旧任务。"""
+    now = time.time()
+    expired = [tid for tid, t in CANVAS_TASKS.items()
+               if now - float(t.get("updated_at") or 0) > CANVAS_TASK_TTL]
+    for tid in expired:
+        CANVAS_TASKS.pop(tid, None)
+    if len(CANVAS_TASKS) > CANVAS_TASK_MAX:
+        oldest = sorted(CANVAS_TASKS.items(),
+                        key=lambda kv: float(kv[1].get("updated_at") or 0))
+        for tid, _ in oldest[:len(CANVAS_TASKS) - CANVAS_TASK_MAX]:
+            CANVAS_TASKS.pop(tid, None)
+
+def canvas_task_update(task_id: str, **fields):
+    """统一的任务状态更新入口，顺带落盘，避免各处直接改字典后忘记持久化。"""
+    with CANVAS_TASK_LOCK:
+        task = CANVAS_TASKS.get(task_id)
+        if task is None:
+            return
+        task.update(fields)
+        task["updated_at"] = time.time()
+        canvas_task_prune_locked()
+        canvas_task_save_locked()
+
+def canvas_task_get(task_id: str):
+    with CANVAS_TASK_LOCK:
+        return dict(CANVAS_TASKS.get(task_id) or {})
+
 
 class CanvasVideoRequest(BaseModel):
     prompt: str = Field(min_length=1, max_length=VIDEO_PROMPT_MAX_LENGTH)
@@ -11080,73 +11148,47 @@ async def midjourney_result(provider, task_id: str):
     }
 
 async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest):
-    with CANVAS_TASK_LOCK:
-        if task_id in CANVAS_TASKS:
-            CANVAS_TASKS[task_id]["status"] = "running"
-            CANVAS_TASKS[task_id]["updated_at"] = time.time()
+    canvas_task_update(task_id, status="running")
     try:
         result = await build_online_image_result(payload)
-        with CANVAS_TASK_LOCK:
-            CANVAS_TASKS[task_id].update({
-                "status": "succeeded",
-                "result": result,
-                "error": "",
-                "updated_at": time.time(),
-            })
+        canvas_task_update(task_id, status="succeeded", result=result, error="")
     except JimengPendingError as exc:
         # 即梦云端还在排队：标记为 jimeng_pending，前端据 submit_id 持久续查（任务未丢失）
         info = jimeng_pending_payload(exc)
-        with CANVAS_TASK_LOCK:
-            CANVAS_TASKS[task_id].update({
-                "status": "jimeng_pending",
-                "jimeng_pending": True,
-                "submit_id": exc.submit_id,
-                "kind": exc.kind,
-                "queue_info": exc.queue_info,
-                "message": info["message"],
-                "error": "",
-                "updated_at": time.time(),
-            })
+        canvas_task_update(
+            task_id,
+            status="jimeng_pending",
+            jimeng_pending=True,
+            submit_id=exc.submit_id,
+            kind=exc.kind,
+            queue_info=exc.queue_info,
+            message=info["message"],
+            error="",
+        )
     except Exception as exc:
         detail = getattr(exc, "detail", None) or str(exc)
         status_code = getattr(exc, "status_code", 500)
         upstream_task_id = getattr(exc, "upstream_task_id", "") or extract_task_id_from_text(detail)
-        with CANVAS_TASK_LOCK:
-            CANVAS_TASKS[task_id].update({
-                "status": "failed",
-                "error": str(detail),
-                "status_code": status_code,
-                "upstream_task_id": upstream_task_id,
-                "updated_at": time.time(),
-            })
+        canvas_task_update(
+            task_id,
+            status="failed",
+            error=str(detail),
+            status_code=status_code,
+            upstream_task_id=upstream_task_id,
+        )
 
 async def run_canvas_comfy_task(task_id: str, payload: GenerateRequest):
-    with CANVAS_TASK_LOCK:
-        if task_id in CANVAS_TASKS:
-            CANVAS_TASKS[task_id]["status"] = "running"
-            CANVAS_TASKS[task_id]["updated_at"] = time.time()
+    canvas_task_update(task_id, status="running")
     try:
         from app.routers.generation import generate
         result = await asyncio.to_thread(generate, payload)
         if isinstance(result, dict) and result.get("error"):
             raise RuntimeError(str(result.get("error") or "ComfyUI 生成失败"))
-        with CANVAS_TASK_LOCK:
-            CANVAS_TASKS[task_id].update({
-                "status": "succeeded",
-                "result": result,
-                "error": "",
-                "updated_at": time.time(),
-            })
+        canvas_task_update(task_id, status="succeeded", result=result, error="")
     except Exception as exc:
         detail = getattr(exc, "detail", None) or str(exc)
         status_code = getattr(exc, "status_code", 500)
-        with CANVAS_TASK_LOCK:
-            CANVAS_TASKS[task_id].update({
-                "status": "failed",
-                "error": str(detail),
-                "status_code": status_code,
-                "updated_at": time.time(),
-            })
+        canvas_task_update(task_id, status="failed", error=str(detail), status_code=status_code)
 
 # --- 图像生成参数 schema（供客户端动态渲染参数表单，避免把参数写死在前端） ---
 IMAGE_PARAM_RATIOS = [
