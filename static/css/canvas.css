@@ -964,9 +964,14 @@ body.output-list-mode .output-file-wrap .output-file-card i { width:16px !import
 .node.sized.ltxDirector-node .gen-run-row,
 .node.sized.ltx-director-node .gen-run-row { margin-top:auto; flex-shrink:0; }
 .hint { position:absolute; left:50%; bottom:24px; transform:translateX(-50%); z-index:25; color:#94a3b8; font-size:11px; font-weight:700; pointer-events:none; }
-.canvas-asset-toggle.active { background:var(--strong); color:var(--strong-text); border-color:var(--strong); }
-/* 输出列表模式按钮的激活态，与资产库按钮保持一致 */
-#outputListModeBtn.active { background:var(--strong); color:var(--strong-text); border-color:var(--strong); }
+/* 工具栏三个开关按钮（资产库 / 输出列表 / 性能胶囊）的激活态。
+   必须带 !important：深色与纯黑主题用 `.shell .tool-btn { background:#161616 !important }`
+   硬压按钮底色（theme.css:591、theme-black.css:373），非 important 的声明会被直接压掉，
+   表现是「按钮能点、但看不出当前是开还是关」。
+   资产库按钮此前就吃的这个亏，一并修掉。 */
+#canvasAssetToggle.active,
+#outputListModeBtn.active,
+#perfPillBtn.active { background:var(--strong) !important; color:var(--strong-text) !important; border-color:var(--strong) !important; }
 .canvas-asset-panel { position:absolute; right:24px; top:76px; bottom:118px; z-index:41; width:320px; max-width:calc(100vw - 48px); min-height:0; display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:16px; border:1px solid var(--line); background:var(--panel); color:var(--text); box-shadow:0 22px 58px var(--shadow); backdrop-filter:blur(18px); overflow:hidden; opacity:0; visibility:hidden; pointer-events:none; transform:translateY(-8px); transition:opacity .16s ease, transform .16s ease, visibility .16s ease; }
 .canvas-asset-panel.open { opacity:1; visibility:visible; pointer-events:auto; transform:translateY(0); }
 .canvas-asset-head,.canvas-asset-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }

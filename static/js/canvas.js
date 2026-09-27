@@ -3820,9 +3820,15 @@ function restoreOutputListMode(){
    原脚本的 FPS 统计读的是 nodes.length，在我们项目里 nodes 是数组，能直接用；
    但它统计的节点类型名（prompt-smart-node 等）属于「智能画布」版本，我们没有，故只统计总数。 */
 const PERF_PILL_MODE_KEY = 'canvas_perf_pill_mode';
+// 单独存「隐藏前是哪一档」：只存 mode 的话，隐藏状态刷新后就丢失了这个信息，
+// 再恢复会回落到「全部」，与用户上次的选择不符。
+const PERF_PILL_LAST_KEY = 'canvas_perf_pill_last';
 const PERF_PILL_LEVELS = ['full', 'fps', 'off'];
 let perfPillEl = null;
 let perfPillMode = 'full';
+// 隐藏后要能回来：记住隐藏前是「全部」还是「仅帧率」，
+// 否则用户从「仅帧率」点两下到「隐藏」，再切回来会莫名变成「全部」。
+let perfPillLastVisibleMode = 'full';
 let perfFrameCount = 0;
 let perfLastTime = 0;
 let perfLastFps = 0;
@@ -3837,8 +3843,10 @@ function perfPillMemory(){
 
 function refreshPerfPill(){
     if(!perfPillEl) return;
-    perfPillEl.classList.toggle('is-hidden', perfPillMode === 'off');
-    if(perfPillMode === 'off') return;
+    const hidden = perfPillMode === 'off';
+    perfPillEl.classList.toggle('is-hidden', hidden);
+    syncPerfPillButton(hidden);
+    if(hidden) return;
     const parts = [`<span class="perf-fps">${perfLastFps}fps</span>`];
     if(perfPillMode === 'full'){
         const mem = perfPillMemory();
@@ -3854,10 +3862,34 @@ function refreshPerfPill(){
 }
 
 function cyclePerfPillMode(){
-    const idx = PERF_PILL_LEVELS.indexOf(perfPillMode);
-    perfPillMode = PERF_PILL_LEVELS[(idx + 1) % PERF_PILL_LEVELS.length];
-    try { localStorage.setItem(PERF_PILL_MODE_KEY, perfPillMode); } catch(e) {}
+    setPerfPillMode(PERF_PILL_LEVELS[(PERF_PILL_LEVELS.indexOf(perfPillMode) + 1) % PERF_PILL_LEVELS.length]);
+}
+
+/* 胶囊隐藏后，页面上就没有任何可点的东西了。工具栏按钮与 P 键是「回来」的入口：
+   不在三态循环里，只做显示/隐藏二态切换，隐藏时记着上次的级别。 */
+function togglePerfPill(){
+    setPerfPillMode(perfPillMode === 'off' ? (perfPillLastVisibleMode || 'full') : 'off');
+}
+
+function setPerfPillMode(mode){
+    if(!PERF_PILL_LEVELS.includes(mode)) mode = 'full';
+    perfPillMode = mode;
+    try {
+        localStorage.setItem(PERF_PILL_MODE_KEY, perfPillMode);
+        if(perfPillMode !== 'off'){
+            perfPillLastVisibleMode = perfPillMode;
+            localStorage.setItem(PERF_PILL_LAST_KEY, perfPillLastVisibleMode);
+        }
+    } catch(e) {}
     refreshPerfPill();
+    return perfPillMode;
+}
+
+function syncPerfPillButton(hidden){
+    const btn = document.getElementById('perfPillBtn');
+    if(!btn) return;
+    btn.classList.toggle('active', !hidden);
+    btn.setAttribute('aria-pressed', hidden ? 'false' : 'true');
 }
 
 function installPerfPill(){
@@ -3865,6 +3897,8 @@ function installPerfPill(){
     try {
         const saved = localStorage.getItem(PERF_PILL_MODE_KEY);
         if(PERF_PILL_LEVELS.includes(saved)) perfPillMode = saved;
+        const last = localStorage.getItem(PERF_PILL_LAST_KEY);
+        if(PERF_PILL_LEVELS.includes(last) && last !== 'off') perfPillLastVisibleMode = last;
     } catch(e) {}
     perfPillEl = document.createElement('div');
     perfPillEl.id = 'studioPerfPill';
@@ -3940,6 +3974,12 @@ function installCanvasShortcuts(){
         if(!meta && !e.altKey && (e.key === 'o' || e.key === 'O')){
             e.preventDefault();
             toggleOutputListMode();
+            return;
+        }
+        // P：显示/隐藏性能胶囊。隐藏后胶囊自己点不到，必须有个键盘出口。
+        if(!meta && !e.altKey && (e.key === 'p' || e.key === 'P')){
+            e.preventDefault();
+            togglePerfPill();
         }
     });
 }
