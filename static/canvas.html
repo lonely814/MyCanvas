@@ -22,7 +22,7 @@
     <script src="/static/js/theme.js?v=2026.09.26.1790448014"></script>
     <script src="/static/js/touch-mouse.js?v=2026.09.26.1790447751"></script>
     <script src="/static/js/i18n.js?v=2026.09.26.1790428942"></script>
-    <link rel="stylesheet" href="/static/css/canvas.css?v=2026.09.26.1790447974">
+    <link rel="stylesheet" href="/static/css/canvas.css?v=2026.09.26.1790518371">
     <link rel="stylesheet" href="/static/css/theme.css?v=2026.09.26.1787881168">
     <link rel="stylesheet" href="/static/css/theme-black.css?v=2026.09.26.1790439142">
 </head>
@@ -60,6 +60,7 @@
                     <button id="workflowTransferToggle" class="tool-btn toolbar-workflow" type="button" title="导入导出工作流" aria-label="导入导出工作流"><i data-lucide="package-open" class="w-4 h-4"></i><span>工作流</span></button>
                     <button id="canvasAssetToggle" class="tool-btn toolbar-asset canvas-asset-toggle" type="button" title="资产库" aria-label="资产库"><i data-lucide="library" class="w-4 h-4"></i><span>资产库</span></button>
                     <button id="canvasLogToggle" class="tool-btn toolbar-log" type="button" onclick="openCanvasLog(event)" title="日志" aria-label="日志" data-i18n-title="canvas.logs"><i data-lucide="list-todo" class="w-4 h-4"></i><span data-i18n="canvas.logs">日志</span></button>
+                    <button id="outputListModeBtn" class="tool-btn" type="button" onclick="toggleOutputListMode()" title="输出列表模式 (O)" aria-label="输出列表模式" data-i18n-title="canvas.outputListHint" aria-pressed="false"><i data-lucide="list" class="w-4 h-4"></i><span data-i18n="canvas.outputListMode">输出列表</span></button>
                 </div>
             </div>
         </div>
@@ -98,6 +99,7 @@
                     <dt><kbd>Delete</kbd></dt><dd>删除选中</dd>
                     <dt><kbd>Ctrl</kbd>+<kbd>0</kbd></dt><dd>缩放复位</dd>
                     <dt>滚轮</dt><dd>缩放画布</dd>
+                    <dt><kbd>O</kbd></dt><dd>输出列表模式</dd>
                     <dt><kbd>?</kbd></dt><dd>显示/隐藏本帮助</dd>
                 </dl>
             </div>
@@ -364,6 +366,6 @@
     </div>
 
     <script src="/static/js/ltx-director-timeline.js?v=2026.09.26.1787881168"></script>
-    <script src="/static/js/canvas.js?v=2026.09.26.1790438133"></script>
+    <script src="/static/js/canvas.js?v=2026.09.26.1790518716"></script>
 </body>
 </html>

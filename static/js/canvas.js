@@ -3752,6 +3752,140 @@ function createNodeByType(type, point){
 let hoveredNodeId = '';
 const shortcutHelpEl = () => document.getElementById('shortcutHelp');
 
+/* ---- 输出列表模式 ----
+   出图多时网格很占面积（实测有画布达 76 张输出），列表模式改为「缩略图 + 文件名 + 删除」的竖向紧凑列表。
+   与原作者的油猴脚本区别：那个脚本靠 MutationObserver 事后往 DOM 里插文件名标签；
+   这里直接在渲染函数里出标签，切换时重渲染即可，不需要监听 DOM。
+   状态是全局的（一份 localStorage），与脚本行为一致。 */
+const OUTPUT_LIST_MODE_KEY = 'canvas_output_list_mode';
+let outputListMode = false;
+
+function applyOutputListMode(on, options = {}){
+    outputListMode = !!on;
+    document.body.classList.toggle('output-list-mode', outputListMode);
+    // 工具栏按钮同步激活态（项目里按钮激活统一用 .active 类）
+    const btn = document.getElementById('outputListModeBtn');
+    if(btn){
+        btn.classList.toggle('active', outputListMode);
+        btn.setAttribute('aria-pressed', outputListMode ? 'true' : 'false');
+    }
+    if(!options.skipSave){
+        try { localStorage.setItem(OUTPUT_LIST_MODE_KEY, outputListMode ? '1' : '0'); } catch(e) {}
+    }
+    syncOutputNameLabels();
+    refreshPerfPill();
+}
+
+/* 切换列表模式时同步文件名标签。
+   不能调 refreshOutputNodeContent：那是增量更新（按 key 复用已有元素、只删多余的），
+   不会重建元素内部 HTML，新标签注入不进去（实测切换后标签数为 0）。
+   这里直接对现有 DOM 增删 .output-name，不碰渲染主流程，也不影响事件绑定。 */
+function syncOutputNameLabels(){
+    if(typeof canvas === 'undefined' || !canvas) return;
+    nodesEl.querySelectorAll('.output-img-wrap').forEach(wrap => {
+        const existing = wrap.querySelector('.output-name');
+        if(!outputListMode){
+            if(existing) existing.remove();
+            return;
+        }
+        if(existing) return;
+        // 音频/文本/文件卡片的文件名在里面已经有，跳过以免重复
+        if(wrap.querySelector('.output-audio-card, .output-file-card')) return;
+        const url = wrap.dataset.outputUrl || wrap.dataset.missingUrl
+            || wrap.querySelector('img,video,audio')?.dataset.url || '';
+        if(!url) return;
+        const label = document.createElement('span');
+        label.className = 'output-name';
+        label.textContent = outputImageName(url);
+        // 放在删除按钮之前，保持「缩略图 · 文件名 · 删除」的阅读顺序
+        const del = wrap.querySelector('.output-del');
+        if(del) wrap.insertBefore(label, del); else wrap.appendChild(label);
+    });
+}
+
+function toggleOutputListMode(){
+    applyOutputListMode(!outputListMode);
+    return outputListMode;
+}
+
+function restoreOutputListMode(){
+    let saved = false;
+    try { saved = localStorage.getItem(OUTPUT_LIST_MODE_KEY) === '1'; } catch(e) {}
+    applyOutputListMode(saved, { skipSave:true });
+}
+
+/* ---- 性能胶囊 ----
+   左下角悬浮，显示帧率 / 内存 / 节点数 / 当前开关状态。
+   点击循环三态：全部 → 仅帧率 → 隐藏（状态持久化）。
+   原脚本的 FPS 统计读的是 nodes.length，在我们项目里 nodes 是数组，能直接用；
+   但它统计的节点类型名（prompt-smart-node 等）属于「智能画布」版本，我们没有，故只统计总数。 */
+const PERF_PILL_MODE_KEY = 'canvas_perf_pill_mode';
+const PERF_PILL_LEVELS = ['full', 'fps', 'off'];
+let perfPillEl = null;
+let perfPillMode = 'full';
+let perfFrameCount = 0;
+let perfLastTime = 0;
+let perfLastFps = 0;
+
+function perfPillMemory(){
+    try {
+        const m = performance.memory;
+        if(m && m.usedJSHeapSize) return Math.round(m.usedJSHeapSize / 1048576) + 'MB';
+    } catch(e) {}
+    return '';
+}
+
+function refreshPerfPill(){
+    if(!perfPillEl) return;
+    perfPillEl.classList.toggle('is-hidden', perfPillMode === 'off');
+    if(perfPillMode === 'off') return;
+    const parts = [`<span class="perf-fps">${perfLastFps}fps</span>`];
+    if(perfPillMode === 'full'){
+        const mem = perfPillMemory();
+        if(mem) parts.push(`<span class="perf-mem">${mem}</span>`);
+        parts.push(`<span class="perf-nodes">${(nodes || []).length}${tr('canvas.perfNodeUnit')}</span>`);
+        const flags = [];
+        if(outputListMode) flags.push('<span class="perf-flag">≡</span>');
+        if(document.body.classList.contains('canvas-board-pan')) flags.push('<span class="perf-flag">↔</span>');
+        // 标记段只有一个元素，不要再套分隔符（否则会出现连续的 "||"）
+        if(flags.length) parts.push(flags.join(''));
+    }
+    perfPillEl.innerHTML = parts.join(`<span class="perf-sep">|</span>`);
+}
+
+function cyclePerfPillMode(){
+    const idx = PERF_PILL_LEVELS.indexOf(perfPillMode);
+    perfPillMode = PERF_PILL_LEVELS[(idx + 1) % PERF_PILL_LEVELS.length];
+    try { localStorage.setItem(PERF_PILL_MODE_KEY, perfPillMode); } catch(e) {}
+    refreshPerfPill();
+}
+
+function installPerfPill(){
+    if(perfPillEl) return;
+    try {
+        const saved = localStorage.getItem(PERF_PILL_MODE_KEY);
+        if(PERF_PILL_LEVELS.includes(saved)) perfPillMode = saved;
+    } catch(e) {}
+    perfPillEl = document.createElement('div');
+    perfPillEl.id = 'studioPerfPill';
+    perfPillEl.title = tr('canvas.perfPillHint');
+    perfPillEl.addEventListener('click', cyclePerfPillMode);
+    document.body.appendChild(perfPillEl);
+    refreshPerfPill();
+    const loop = now => {
+        perfFrameCount++;
+        if(!perfLastTime) perfLastTime = now;
+        if(now - perfLastTime >= 1000){
+            perfLastFps = Math.round(perfFrameCount * 1000 / (now - perfLastTime));
+            perfFrameCount = 0;
+            perfLastTime = now;
+            refreshPerfPill();
+        }
+        requestAnimationFrame(loop);
+    };
+    requestAnimationFrame(loop);
+}
+
 // 事件委托：render() 会重建节点 DOM，委托在容器上才不会随重建失效
 function installNodeHoverHighlight(){
     if(!nodesEl || nodesEl.dataset.hoverBound === '1') return;
@@ -3800,6 +3934,12 @@ function installCanvasShortcuts(){
         if(e.key === '?' && !meta){
             const el = shortcutHelpEl();
             if(el) el.hidden = !el.hidden;
+            return;
+        }
+        // O：输出列表模式。不带修饰键，且不在输入框里（上方已过滤输入框）。
+        if(!meta && !e.altKey && (e.key === 'o' || e.key === 'O')){
+            e.preventDefault();
+            toggleOutputListMode();
         }
     });
 }
@@ -6282,6 +6422,7 @@ function render(){
         bindCanvasPreviewImageFallbacks(nodesEl);
         syncCanvasSelectedImageResolution(nodesEl);
         measureCanvasOriginalImageNodes(nodesEl);
+        syncOutputNameLabels();  // 列表模式下，新建/新生成的输出节点也要补上文件名
     }
     refreshOutputTimer();
     syncCanvasEmptyGuide();
@@ -14141,21 +14282,24 @@ function renderOutputMedia(item, useGridLayout=false){
     const grid = useGridLayout ? (meta.grid || null) : null;
     const gridStyle = grid ? ` style="grid-row:${Number(grid.row || 0) + 1};grid-column:${Number(grid.col || 0) + 1};aspect-ratio:${Math.max(1, Number(grid.w || 1))}/${Math.max(1, Number(grid.h || 1))}"` : '';
     const timePill = meta.runMs && !meta.viewed ? `<span class="output-time-pill">${formatRunDuration(meta.runMs)}</span>` : '';
+    // 列表模式才渲染文件名（网格模式下 CSS 会把它藏起来，但没必要白造节点）。
+    // 音频/文本/文件这三类卡片内部本来就显示文件名，再加一个会重复，故排除。
+    const nameLabel = outputListMode ? `<span class="output-name">${escapeHtml(meta.name || outputImageName(url))}</span>` : '';
     if(isMissingAssetUrl(url)){
-        return `<div class="output-img-wrap" data-output-url="${safe}" data-missing-url="${safe}"${gridStyle}>${missingAssetHtml(url, true)}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
+        return `<div class="output-img-wrap" data-output-url="${safe}" data-missing-url="${safe}"${gridStyle}>${missingAssetHtml(url, true)}${nameLabel}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
     }
     if(kind === 'video'){
-        return `<div class="output-img-wrap" data-output-url="${safe}"${gridStyle}>${canvasVideoPreviewHtml(url, useGridLayout ? 512 : 768, 'alt="video output" data-video-fallback-attrs="controls data-output-video-fallback=&quot;1&quot;"')}${timePill}<button class="canvas-video-play output-video-play" type="button" title="播放"><i data-lucide="play"></i></button><div class="output-video-badge"><i data-lucide="play" class="w-3 h-3"></i>VIDEO</div><button class="output-del" title="${tr('common.delete')}">×</button></div>`;
+        return `<div class="output-img-wrap" data-output-url="${safe}"${gridStyle}>${canvasVideoPreviewHtml(url, useGridLayout ? 512 : 768, 'alt="video output" data-video-fallback-attrs="controls data-output-video-fallback=&quot;1&quot;"')}${nameLabel}${timePill}<button class="canvas-video-play output-video-play" type="button" title="播放"><i data-lucide="play"></i></button><div class="output-video-badge"><i data-lucide="play" class="w-3 h-3"></i>VIDEO</div><button class="output-del" title="${tr('common.delete')}">×</button></div>`;
     }
     if(kind === 'audio'){
-        return `<div class="output-img-wrap output-audio-wrap" data-output-url="${safe}"${gridStyle}><div class="output-audio-card"><i data-lucide="file-audio" class="w-7 h-7"></i><span>${escapeHtml(outputImageName(url))}</span><audio src="${safe}" data-url="${safe}" controls preload="metadata"></audio></div>${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
+        return `<div class="output-img-wrap output-audio-wrap" data-output-url="${safe}"${gridStyle}><div class="output-audio-card"><i data-lucide="file-audio" class="w-7 h-7"></i><span>${escapeHtml(outputImageName(url))}</span><audio src="${safe}" data-url="${safe}" controls preload="metadata"></audio></div>${nameLabel}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
     }
     if(kind === 'text' || kind === 'file'){
         const icon = kind === 'text' ? 'file-text' : 'file';
         const label = kind === 'text' ? 'TEXT' : 'FILE';
-        return `<div class="output-img-wrap output-file-wrap" data-output-url="${safe}"${gridStyle}><div class="output-file-card"><i data-lucide="${icon}" class="w-7 h-7"></i><span>${escapeHtml(meta.name || outputImageName(url))}</span><small>${label}</small></div>${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
+        return `<div class="output-img-wrap output-file-wrap" data-output-url="${safe}"${gridStyle}><div class="output-file-card"><i data-lucide="${icon}" class="w-7 h-7"></i><span>${escapeHtml(meta.name || outputImageName(url))}</span><small>${label}</small></div>${nameLabel}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
     }
-    return `<div class="output-img-wrap" data-output-url="${safe}"${gridStyle}>${canvasPreviewImgHtml(url, useGridLayout ? 512 : 768, 'alt="generated output"')}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
+    return `<div class="output-img-wrap" data-output-url="${safe}"${gridStyle}>${canvasPreviewImgHtml(url, useGridLayout ? 512 : 768, 'alt="generated output"')}${nameLabel}${timePill}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
 }
 function outputGridLayout(node){
     const images = node?.images || [];
@@ -16549,6 +16693,8 @@ window.onload = async () => {
     applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'light');
     applyQuickToolbarState();
     if(window.StudioI18n) StudioI18n.apply();
+    restoreOutputListMode();   // 恢复列表模式（要在 i18n 与画布就绪后，内部会重渲染输出节点）
+    installPerfPill();         // 性能胶囊（放在 i18n 之后，title 才能取到译文）
     document.title = tr('canvas.title');
     initOutputCompareEvents();
     initOutputPreviewZoomEvents();
