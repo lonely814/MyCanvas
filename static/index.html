@@ -1123,6 +1123,99 @@
             opacity: 0;
             max-width: 0;
         }
+
+        /* ===== 手机端：侧边栏改抽屉 =====
+           桌面侧栏是 80px 图标条，靠 :hover 展开到 220px 显示文字。触屏没有 hover，
+           手机上就永远只显示图标、看不到任何文字，且这 80px 常驻挤占内容区。
+           这里在窄屏改为「完全收起 + 汉堡按钮唤出覆盖层抽屉」：
+           - 收起态：translateX(-100%)，不占布局宽度，内容区因此变宽
+           - 展开态：body.drawer-open 时固定浮在内容之上
+           仅 ≤768px 生效，桌面与平板横屏不受影响。 */
+        .sidebar-drawer-btn,
+        .sidebar-drawer-backdrop { display: none; }
+
+        @media (max-width: 768px) {
+            .sidebar-drawer-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                z-index: 60;
+                width: 44px;
+                height: 44px;
+                border: 1px solid var(--border);
+                border-radius: 14px;
+                background: var(--sidebar-bg);
+                color: var(--text);
+                cursor: pointer;
+                box-shadow: 0 6px 20px rgba(15, 23, 42, .12);
+            }
+            .sidebar-drawer-btn svg { width: 20px; height: 20px; }
+
+            /* 点空白处收起抽屉 */
+            .sidebar-drawer-backdrop {
+                display: block;
+                position: fixed;
+                inset: 0;
+                z-index: 55;
+                background: rgba(15, 23, 42, .38);
+                opacity: 0;
+                pointer-events: none;
+                transition: opacity .25s var(--fluid-ease, ease);
+            }
+            body.drawer-open .sidebar-drawer-backdrop { opacity: 1; pointer-events: auto; }
+
+            /* 侧栏本体：移出屏幕且不占宽度 */
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: 0;
+                z-index: 58;
+                width: 220px;
+                min-width: 0;
+                flex: 0 0 auto;
+                transform: translateX(-100%);
+                transition: transform .28s var(--fluid-ease, ease), background .3s;
+                box-shadow: 0 0 40px rgba(15, 23, 42, .18);
+            }
+            body.drawer-open .sidebar { transform: translateX(0); }
+
+            /* 抽屉按原始尺寸渲染：整页缩放（手机上约 0.68）会把 14px 文字压到约 9.5px 不可读，
+               而抽屉是我们自己排的版，没必要跟着缩。height 同步用 dvh（不能除以 scale）。 */
+            body.studio-scale-host .sidebar {
+                zoom: 1;
+                height: 100dvh;
+                max-height: 100dvh;
+            }
+
+            /* 抽屉态一律展开视觉与文案（触屏无 hover，也不该有延迟） */
+            .sidebar,
+            .sidebar:hover { width: 220px; transition-delay: 0s; }
+            .sidebar .nav-item,
+            .sidebar .nav-fold-toggle,
+            .sidebar:hover .nav-item,
+            .sidebar:hover .nav-fold-toggle { width: 190px; transition-delay: 0s; }
+            .sidebar .nav-text,
+            .sidebar:hover .nav-text { opacity: 1; transition-delay: 0s; }
+            .sidebar .side-pill,
+            .sidebar:hover .side-pill { width: 170px; gap: 8px; transition-delay: 0s; }
+            .sidebar .side-pill-text,
+            .sidebar:hover .side-pill-text { opacity: 1; max-width: 120px; transition-delay: 0s; }
+            .sidebar .logo-ring { transform: rotate(90deg); border-radius: 50%; }
+
+            /* 内容区铺满（侧栏已脱离文档流），四角留白收窄 */
+            .stage {
+                margin: 8px;
+                height: calc(100dvh - 16px);
+                border-radius: 18px;
+            }
+            body.studio-scale-host .stage {
+                margin: max(6px, calc(8px * var(--studio-ui-scale, 1)));
+                border-radius: max(12px, calc(18px * var(--studio-ui-scale, 1)));
+            }
+        }
     </style>
 <link rel="stylesheet" href="/static/css/theme-black.css?v=2026.09.26.1790439142">
 </head>
@@ -1130,6 +1223,16 @@
 <body>
 
     <div class="app-shell">
+        <!-- 手机端抽屉开关：仅 ≤768px 显示，桌面隐藏（见 style 里的媒体查询） -->
+        <button class="sidebar-drawer-btn" id="sidebarDrawerBtn" type="button" onclick="toggleSidebarDrawer(event)"
+            aria-controls="studioSidebar" aria-expanded="false" data-i18n-title="nav.openMenu" title="菜单">
+            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+        </button>
+        <div class="sidebar-drawer-backdrop" id="sidebarDrawerBackdrop" onclick="closeSidebarDrawer()" aria-hidden="true"></div>
         <aside class="sidebar" id="studioSidebar">
             <button class="logo-ring mb-12" id="sidebarLogoToggle" type="button" onclick="toggleSidebarPinned(event)" aria-pressed="false" title="固定导航栏">
                 <div class="w-1.5 h-1.5 rounded-full transition-colors" id="logo-dot" style="background:var(--text)"></div>
@@ -1284,11 +1387,11 @@
         </script>
 
         <main class="stage">
-            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.09.26.1790447926" class="active" scrolling="yes"></iframe>
+            <iframe id="frame-zimage" data-src="/static/zimage.html?v=2026.09.26.1790448072" class="active" scrolling="yes"></iframe>
             <iframe id="frame-enhance" data-src="/static/enhance.html?v=2026.09.26.1790448072" scrolling="yes"></iframe>
-            <iframe id="frame-klein" data-src="/static/klein.html?v=2026.09.26.1790447926" scrolling="yes"></iframe>
+            <iframe id="frame-klein" data-src="/static/klein.html?v=2026.09.26.1790448072" scrolling="yes"></iframe>
             <iframe id="frame-angle" data-src="/static/angle.html?v=2026.09.26.1790448072" scrolling="yes"></iframe>
-            <iframe id="frame-online" data-src="/static/online.html?v=2026.09.26.1790447926" scrolling="yes"></iframe>
+            <iframe id="frame-online" data-src="/static/online.html?v=2026.09.26.1790448072" scrolling="yes"></iframe>
             <iframe id="frame-asset-manager" data-src="/static/asset-manager.html?v=2026.09.26.1790448072" scrolling="yes"></iframe>
             <iframe id="frame-api-settings" data-src="/static/api-settings.html?v=2026.09.26.1790448072" scrolling="yes"></iframe>
             <iframe id="frame-comfyui-settings" data-src="/static/comfyui-settings.html?v=2026.09.26.1790448072" scrolling="yes"></iframe>
@@ -1340,11 +1443,17 @@
         function toggleSidebarPinned(event) {
             event?.preventDefault?.();
             event?.stopPropagation?.();
+            // 抽屉模式下这个按钮（侧栏顶部圆点）的语义是"收起抽屉"，
+            // 且不能写 pinned 状态——否则手机上点一次会把桌面端下次打开也变成固定展开。
+            if(isDrawerMode()) { closeSidebarDrawer(); return; }
             const sidebar = document.getElementById('studioSidebar');
             setSidebarPinned(!sidebar?.classList.contains('is-pinned'));
         }
 
         function restoreSidebarPinned() {
+            // 抽屉模式下侧栏由 CSS 媒体查询强制为展开视觉，pinned 类在此无意义，
+            // 且会导致收起动画（is-collapsing）与 translateX 抽屉动画互相干扰。
+            if(isDrawerMode()) return;
             setSidebarPinned(localStorage.getItem(SIDEBAR_PINNED_KEY) === '1', { skipRemember:true });
         }
 
@@ -1398,6 +1507,31 @@
             } catch(e) {}
         }
 
+        /* ===== 手机端侧栏抽屉 =====
+           只在窄屏有意义（CSS 媒体查询里按钮才显示）。桌面下这些函数被调用也无副作用，
+           因为 .sidebar 在宽屏仍是常规 flex 子项，drawer-open 类不影响其定位。 */
+        function isDrawerMode() {
+            return window.matchMedia('(max-width: 768px)').matches;
+        }
+
+        function setSidebarDrawer(open) {
+            const btn = document.getElementById('sidebarDrawerBtn');
+            document.body.classList.toggle('drawer-open', !!open);
+            if(btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            // 抽屉展开时内容区若有滚动，先复位避免错位
+            if(open) resetStudioRootScroll();
+        }
+
+        function toggleSidebarDrawer(event) {
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            setSidebarDrawer(!document.body.classList.contains('drawer-open'));
+        }
+
+        function closeSidebarDrawer() {
+            if(document.body.classList.contains('drawer-open')) setSidebarDrawer(false);
+        }
+
         function switchUI(el, id, options = {}) {
             resetStudioRootScroll();
             if(!PAGE_IDS.includes(id)) id = DEFAULT_PAGE_ID;
@@ -1412,6 +1546,8 @@
             syncThemeToFrame(target);
             syncLanguageToFrame(target);
             syncScaleToFrame(target);
+            // 选完页面就收起抽屉，否则遮罩一直挡着内容（桌面下 drawer-open 本就不存在，调用无副作用）
+            closeSidebarDrawer();
             if(LOCAL_PAGE_IDS.includes(id)) {
                 setLocalNavCollapsed(false, { skipRemember:true });
             } else {
@@ -1619,7 +1755,20 @@
                 sidebar.addEventListener('mouseenter', () => pauseScaleInFrames());
                 sidebar.addEventListener('mouseleave', () => pauseScaleInFrames());
             }
+            // 抽屉初始一定是收起的；桌面下无副作用
+            setSidebarDrawer(false);
         });
+
+        // 抽屉相关：Esc 关闭；跨过窄屏断点时清理状态（例如手机横竖屏切换、或拖动窗口宽度）
+        document.addEventListener('keydown', e => {
+            if(e.key === 'Escape') closeSidebarDrawer();
+        });
+        (() => {
+            const mq = window.matchMedia('(max-width: 768px)');
+            const onChange = () => { if(!mq.matches) setSidebarDrawer(false); };
+            if(mq.addEventListener) mq.addEventListener('change', onChange);
+            else if(mq.addListener) mq.addListener(onChange);
+        })();
 
         // sync theme when iframe loads
         document.querySelectorAll('iframe').forEach(f => {
