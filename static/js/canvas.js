@@ -1530,6 +1530,33 @@ function serializableCanvasNode(node){
 function serializableCanvasNodes(list=nodes){
     return (list || []).map(serializableCanvasNode);
 }
+function canvasSavePayload(){
+    return JSON.stringify({
+        title:canvas.title,
+        icon:canvas.icon || '🧩',
+        nodes:serializableCanvasNodes(),
+        connections,
+        viewport,
+        logs:canvas.logs || [],
+        client_id:CLIENT_ID,
+        base_updated_at:Number(lastCanvasUpdatedAt || canvas.updated_at || 0)
+    });
+}
+async function flushCanvasSaveOnLeave(){
+    // 关闭/离开页面的尽力保存：keepalive 让请求在页面卸载后仍能发完。
+    // 常规自动保存已覆盖绝大多数场景，这里只兜「最后 500ms 防抖窗口内的编辑」。
+    if(!canvas || applyingRemoteCanvas || !localCanvasDirty) return;
+    try {
+        await fetch(`/api/canvases/${canvas.id}`, {
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body:canvasSavePayload(),
+            keepalive:true
+        });
+    } catch(e) {
+        // 尽力而为，失败时保留 dirty 标记由下一次常规保存接管
+    }
+}
 async function saveCanvas(){
     if(!canvas || applyingRemoteCanvas) return;
     if(savingCanvasNow){
@@ -1543,16 +1570,7 @@ async function saveCanvas(){
         const res = await fetch(`/api/canvases/${canvas.id}`, {
             method:'PUT',
             headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-                title:canvas.title,
-                icon:canvas.icon || '🧩',
-                nodes:serializableCanvasNodes(),
-                connections,
-                viewport,
-                logs:canvas.logs || [],
-                client_id:CLIENT_ID,
-                base_updated_at:Number(lastCanvasUpdatedAt || canvas.updated_at || 0)
-            })
+            body:canvasSavePayload()
         });
         if(res.status === 409){
             const data = await res.json().catch(() => ({}));
@@ -4517,7 +4535,12 @@ async function uploadMediaFiles(files, point, onlyImages=false, opts={}){
     if(!supported.length) return [];
     const form = new FormData();
     supported.forEach(file => form.append('files', file));
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json());
+    const res = await fetch('/api/ai/upload', {method:'POST', body:form});
+    if(!res.ok){
+        showErrorModal(await responseErrorMessage(res, '上传失败'), '上传云端');
+        return [];
+    }
+    const data = await res.json().catch(() => ({}));
     const base = point || screenToWorld(window.innerWidth / 2, window.innerHeight / 2);
     const created = [];
     (data.files || []).forEach((file, i) => {
@@ -4684,7 +4707,12 @@ async function fillImageNode(nodeId, files, opts={}){
     }
     const form = new FormData();
     form.append('files', imgs[0]);
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json());
+    const res = await fetch('/api/ai/upload', {method:'POST', body:form});
+    if(!res.ok){
+        showErrorModal(await responseErrorMessage(res, '上传失败'), '上传云端');
+        return;
+    }
+    const data = await res.json().catch(() => ({}));
     const file = data.files?.[0];
     const node = nodes.find(n => n.id === nodeId);
     if(file && node){
@@ -16795,6 +16823,15 @@ window.onload = async () => {
     document.title = tr('canvas.title');
     initOutputCompareEvents();
     initOutputPreviewZoomEvents();
+    // 离开页面前兜底保存：切后台/最小化时立即落盘，真正卸载时再发一次 keepalive 请求。
+    window.addEventListener('pagehide', flushCanvasSaveOnLeave);
+    document.addEventListener('visibilitychange', () => {
+        if(document.hidden && canvas && localCanvasDirty && !applyingRemoteCanvas){
+            clearTimeout(saveTimer);
+            saveTimer = null;
+            saveCanvas();
+        }
+    });
     applyViewport();
     await loadConfig();
     pruneMissingComfyWorkflows();

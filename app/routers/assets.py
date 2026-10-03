@@ -123,6 +123,8 @@ async def update_asset_classification_prompt(payload: Dict[str, str]):
 
 async def upload_local_assets(files: List[UploadFile] = File(...), folder: str = Form("")):
 
+    max_upload_bytes = 50 * 1024 * 1024
+
     uploaded = []
 
     folder_rel, folder_abs = _local_upload_safe_folder(folder)
@@ -136,6 +138,10 @@ async def upload_local_assets(files: List[UploadFile] = File(...), folder: str =
         if not content:
 
             continue
+
+        if len(content) > max_upload_bytes:
+
+            raise HTTPException(status_code=413, detail=f"{file.filename or '文件'} 超过 50MB，无法上传")
 
         kind, ext = _local_upload_kind_ext(file.filename, file.content_type)
 

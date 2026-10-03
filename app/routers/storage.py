@@ -229,6 +229,8 @@ async def delete_storage_files(payload: Dict[str, Any]):
 
 async def upload_image(files: List[UploadFile] = File(...)):
 
+    max_upload_bytes = 50 * 1024 * 1024
+
     uploaded_files = []
 
     files_content = []
@@ -236,6 +238,10 @@ async def upload_image(files: List[UploadFile] = File(...)):
     for file in files:
 
         content = await file.read()
+
+        if len(content) > max_upload_bytes:
+
+            raise HTTPException(status_code=413, detail=f"{file.filename or '文件'} 超过 50MB，无法上传")
 
         files_content.append((file, content))
 

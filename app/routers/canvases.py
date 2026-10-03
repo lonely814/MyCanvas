@@ -199,9 +199,7 @@ async def delete_project(project_id: str):
 
                 data["project"] = DEFAULT_PROJECT_ID
 
-                with open(path, 'w', encoding='utf-8') as f:
-
-                    json.dump(data, f, ensure_ascii=False, indent=2)
+                core.write_json_atomic(path, data)
 
                 moved += 1
 
@@ -291,9 +289,7 @@ async def update_canvas_meta(canvas_id: str, payload: CanvasMetaUpdate):
 
     with CANVAS_LOCK:
 
-        with open(canvas_path(canvas["id"]), 'w', encoding='utf-8') as f:
-
-            json.dump(canvas, f, ensure_ascii=False, indent=2)
+        core.write_json_atomic(canvas_path(canvas["id"]), canvas)
 
     return {"canvas": canvas_record(canvas)}
 
