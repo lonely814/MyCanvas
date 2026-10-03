@@ -613,6 +613,9 @@ async def get_canvas_image_task(task_id: str):
 
         raise HTTPException(status_code=404, detail="画布任务不存在，可能服务已重启或任务已过期")
 
+    # 即梦排队中的任务由这次轮询顺带触发后台续查（节流在函数内部）。
+    core.maybe_schedule_jimeng_resume(task_id, task)
+
     return task
 
 

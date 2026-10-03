@@ -11208,7 +11208,8 @@ async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest):
         result = await build_online_image_result(payload)
         canvas_task_update(task_id, status="succeeded", result=result, error="")
     except JimengPendingError as exc:
-        # 即梦云端还在排队：标记为 jimeng_pending，前端据 submit_id 持久续查（任务未丢失）
+        # 即梦云端还在排队：标记为 jimeng_pending（任务未丢失）。
+        # 后续由画布任务查询接口在轮询到该状态时自动续查推进（见 maybe_schedule_jimeng_resume）。
         info = jimeng_pending_payload(exc)
         canvas_task_update(
             task_id,
@@ -11231,6 +11232,123 @@ async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest):
             status_code=status_code,
             upstream_task_id=upstream_task_id,
         )
+
+
+JIMENG_RESUME_MIN_INTERVAL = 5.0
+_jimeng_resume_inflight = set()
+
+
+def maybe_schedule_jimeng_resume(task_id: str, task: dict):
+    """画布任务查询接口读到 jimeng_pending 时触发一次后台续查（含节流与并发去重）。
+
+    即梦云端排队可能远超单次生成的轮询窗口，任务会停在 jimeng_pending 且没有任何
+    东西推进它。前端本来就会持续轮询 GET /api/canvas-image-tasks/{id}，由这里代为
+    向即梦续查并把任务推进到 succeeded / failed / 仍在排队。
+    resume_checked_at 存在任务记录里（顺带刷新 updated_at，防止排队期间被 TTL 清掉）。
+    """
+    if str((task or {}).get("status") or "") != "jimeng_pending":
+        return
+    submit_id = str(task.get("submit_id") or "").strip()
+    if not submit_id or task_id in _jimeng_resume_inflight:
+        return
+    now = time.time()
+    if now - float(task.get("resume_checked_at") or 0) < JIMENG_RESUME_MIN_INTERVAL:
+        return
+    canvas_task_update(task_id, resume_checked_at=now)
+    _jimeng_resume_inflight.add(task_id)
+    asyncio.create_task(resume_jimeng_canvas_task(task_id, submit_id, str(task.get("kind") or "image")))
+
+
+async def resume_jimeng_canvas_task(task_id: str, submit_id: str, kind: str):
+    try:
+        snapshot = canvas_task_get(task_id)
+        if str(snapshot.get("status") or "") != "jimeng_pending" or str(snapshot.get("submit_id") or "") != submit_id:
+            return
+        try:
+            raw = await jimeng_query_result(submit_id, kind)
+        except HTTPException as exc:
+            # CLI 层失败（未安装/未登录/网络抖动）不应立刻判死任务：连续多次才标记失败。
+            detail = str(getattr(exc, "detail", None) or exc)
+            count = int(float(snapshot.get("resume_error_count") or 0)) + 1
+            if count >= 5:
+                canvas_task_update(
+                    task_id,
+                    status="failed",
+                    error=f"即梦续查连续 {count} 次失败：{detail}",
+                    status_code=getattr(exc, "status_code", 502),
+                )
+            else:
+                canvas_task_update(
+                    task_id,
+                    resume_error_count=count,
+                    message=f"即梦续查暂时失败（{count}/5），继续等待：{detail}"[:300],
+                )
+            return
+        failure = jimeng_failure_reason(raw)
+        if failure:
+            canvas_task_update(
+                task_id,
+                status="failed",
+                error=f"即梦生成失败：{failure}",
+                status_code=502,
+            )
+            return
+        urls = []
+        for value in jimeng_output_values(raw):
+            try:
+                local_url = await jimeng_store_output_value(value, kind)
+            except Exception:
+                local_url = ""
+            if local_url and local_url not in urls:
+                urls.append(local_url)
+        if urls:
+            provider_id = str(snapshot.get("provider_id") or "")
+            try:
+                provider = get_api_provider(provider_id)
+            except Exception:
+                provider = None
+            result = {
+                "prompt": "",
+                "images": urls,
+                "image_items": [image_output_meta(u) for u in urls],
+                "timestamp": time.time(),
+                "type": "online",
+                "model": str(snapshot.get("model") or ""),
+                "provider_id": (provider or {}).get("id", provider_id),
+                "provider_name": (provider or {}).get("name") or provider_id,
+            }
+            canvas_task_update(
+                task_id,
+                status="succeeded",
+                result=result,
+                error="",
+                resume_error_count=0,
+            )
+            if GLOBAL_LOOP:
+                asyncio.run_coroutine_threadsafe(manager.broadcast_new_image(result), GLOBAL_LOOP)
+            return
+        # 查到了但还没有媒体、也没有失败原因 → 仍在云端排队，保持 pending 等下一轮。
+        queue_info = jimeng_queue_info(raw)
+        message = str(snapshot.get("message") or "")
+        if queue_info:
+            info = jimeng_pending_payload(JimengPendingError(submit_id, kind, queue_info, raw))
+            message = info["message"]
+        canvas_task_update(
+            task_id,
+            status="jimeng_pending",
+            jimeng_pending=True,
+            submit_id=submit_id,
+            kind=kind,
+            queue_info=queue_info,
+            message=message,
+            error="",
+            resume_error_count=0,
+        )
+    except Exception as exc:
+        # 续查自身的意外错误不打断轮询：保持现状，下一轮 GET 会再次触发。
+        print(f"[jimeng-resume] 任务 {task_id} 续查异常（下轮轮询会重试）: {exc}", flush=True)
+    finally:
+        _jimeng_resume_inflight.discard(task_id)
 
 async def run_canvas_comfy_task(task_id: str, payload: GenerateRequest):
     canvas_task_update(task_id, status="running")

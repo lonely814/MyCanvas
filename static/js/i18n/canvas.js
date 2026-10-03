@@ -37,6 +37,7 @@
         "canvas.perfPillHint": { zh: "性能胶囊：点击切换显示级别（隐藏后按 P 或点工具栏「性能」可恢复）", en: "Perf pill: click to cycle level (press P to bring it back after hiding)" },
         "canvas.perfPillToggleHint": { zh: "显示/隐藏性能胶囊（快捷键 P）", en: "Show/hide the perf pill (key: P)" },
         "canvas.perfNodeUnit": { zh: "节点", en: " nodes" },
+        "canvas.jimengPendingHint": { zh: "即梦任务仍在云端排队/生成中，任务未丢失", en: "Jimeng task is still queued upstream; it is not lost" },
         "canvas.loopCount": { zh: "次数", en: "Runs" },
         "canvas.loopStart": { zh: "起始", en: "Start" },
         "canvas.loopSerial": { zh: "循环", en: "Batch" },

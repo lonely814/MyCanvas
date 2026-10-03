@@ -6583,7 +6583,7 @@ function renderPendingOutput(pending){
             <button class="output-del" title="${tr('common.delete')}">×</button>
         </div>`;
     }
-    return `<div class="output-img-wrap loading-wrap" data-pending-id="${escapeAttr(pending.id)}"${pendingOutputStyle(pending)}><span class="output-time-pill running">${formatRunDuration(nowMs() - Number(pending.startedAt || nowMs()))}</span><div class="output-spinner"></div><button class="output-del" title="${tr('common.delete')}">×</button></div>`;
+    return `<div class="output-img-wrap loading-wrap" data-pending-id="${escapeAttr(pending.id)}"${pendingOutputStyle(pending)}><span class="output-time-pill running">${formatRunDuration(nowMs() - Number(pending.startedAt || nowMs()))}</span><div class="output-spinner"></div>${pending?.statusMessage ? `<div class="output-pending-msg">${escapeHtml(pending.statusMessage)}</div>` : ''}<button class="output-del" title="${tr('common.delete')}">×</button></div>`;
 }
 function captureOutputScrolls(){
     const state = new Map();
@@ -14220,6 +14220,18 @@ async function pollCanvasImageTask(taskId, options={}){
                 failCanvasImageTask(taskId, data.error || tr('canvas.generationFailed'), data);
                 return 'failed';
             }
+            if(data.status === 'jimeng_pending'){
+                // 即梦云端排队：后端会在轮询时自动续查推进，这里只负责把排队情况亮出来。
+                const msg = data.message || tr('canvas.jimengPendingHint');
+                setStatus(msg);
+                const foundP = findPendingTask(taskId);
+                if(foundP?.pending && foundP.pending.statusMessage !== msg){
+                    foundP.pending.statusMessage = msg;
+                    refreshNodes([foundP.out.id]);
+                }
+                await sleep(5000);
+                continue;
+            }
             await sleep(1800);
         }
     } catch(err) {
@@ -14244,6 +14256,11 @@ async function waitCanvasImageTaskResult(taskId, options={}){
         const data = await res.json();
         if(data.status === 'succeeded') return data.result || {};
         if(data.status === 'failed') throw new Error(data.error || tr('canvas.generationFailed'));
+        if(data.status === 'jimeng_pending'){
+            setStatus(data.message || tr('canvas.jimengPendingHint'));
+            await sleep(5000);
+            continue;
+        }
         await sleep(1800);
     }
 }

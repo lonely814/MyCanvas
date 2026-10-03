@@ -786,6 +786,7 @@ input[type=range].canvas-range::-webkit-slider-runnable-track { height:3px; bord
 .output-recover-state i.spinning { animation:spin .9s linear infinite; }
 .output-recover-title { font-size:12px; font-weight:800; color:var(--text); }
 .output-recover-sub { max-width:100%; font-size:10px; line-height:1.35; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.output-pending-msg { max-width:100%; padding:0 10px; font-size:10px; line-height:1.4; color:var(--muted); text-align:center; }
 .output-recover-query { height:28px; padding:0 12px; border-radius:999px; border:1px solid var(--line-2); background:var(--card-solid); color:var(--text); font-size:11px; font-weight:800; cursor:pointer; }
 .output-recover-query:hover:not(:disabled) { background:var(--soft-2); }
 .output-recover-query:disabled { opacity:.55; cursor:default; }
