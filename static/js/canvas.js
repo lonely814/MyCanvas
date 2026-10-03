@@ -16603,7 +16603,7 @@ board.addEventListener('mousedown', e => {
 // 也没处理 deltaMode/触控板小步长，且无上下限可以缩到无穷小。
 let zoomAnimRaf = 0;
 let zoomAnim = null;  // {fromScale,toScale,start,duration,cx,cy,wx,wy}
-const ZOOM_WHEEL_STRENGTH = 0.0016;  // exp 强度：鼠标一格(≈100px) ≈ ×1.17，0.5↔2 约 9 格
+const ZOOM_WHEEL_STRENGTH = 0.0022;  // exp 强度：鼠标一格(≈100px) ≈ ×1.25，0.5↔2 约 6 格
 const ZOOM_PINCH_STRENGTH = 0.0006;  // 触屏捏合合成 wheel（每次 ±100/0.06log）按 1:1 跟手
 const ZOOM_SCALE_MIN = 0.15;
 const ZOOM_SCALE_MAX = 4;
