@@ -561,15 +561,15 @@ body.studio-theme-dark .shell .panel {
 
 html.studio-theme-dark body .shell .node,
 body.studio-theme-dark .shell .node {
-    background: #171d29 !important;
+    background: linear-gradient(180deg, rgba(42,46,56,.82), rgba(15,18,24,.9)) !important;
     border-color: rgba(148,163,184,.16) !important;
-    box-shadow: 0 16px 42px rgba(0,0,0,.22) !important;
+    box-shadow: 0 16px 42px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.13), inset 0 -1px 0 rgba(0,0,0,.45) !important;
     color: #e5e9f0 !important;
 }
 
 html.studio-theme-dark body .shell .node-head,
 body.studio-theme-dark .shell .node-head {
-    background: #171d29 !important;
+    background: transparent !important;
     border-bottom-color: rgba(148,163,184,.14) !important;
 }
 

@@ -364,9 +364,9 @@ body.theme-black .output-resolution { background: rgba(22,22,22,.86) !important;
 html.theme-black body .shell .panel,
 body.theme-black .shell .panel { background: rgba(22,22,22,.86) !important; border: 1px solid rgba(161,161,161,.16) !important; box-shadow: 0 14px 36px rgba(0,0,0,.18) !important }
 html.theme-black body .shell .node,
-body.theme-black .shell .node { background: #1d1d1d !important; border-color: rgba(161,161,161,.16) !important; box-shadow: 0 16px 42px rgba(0,0,0,.22) !important; color: #e9e9e9 !important }
+body.theme-black .shell .node { background: linear-gradient(180deg, rgba(43,43,49,.8), rgba(14,14,16,.9)) !important; border-color: rgba(161,161,161,.16) !important; box-shadow: 0 16px 42px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.11), inset 0 -1px 0 rgba(0,0,0,.55) !important; color: #e9e9e9 !important }
 html.theme-black body .shell .node-head,
-body.theme-black .shell .node-head { background: #1d1d1d !important; border-bottom-color: rgba(161,161,161,.14) !important }
+body.theme-black .shell .node-head { background: transparent !important; border-bottom-color: rgba(161,161,161,.14) !important }
 html.theme-black body .shell .node-title,
 body.theme-black .shell .node-title { color: #999999 !important }
 html.theme-black body .shell .node.selected,

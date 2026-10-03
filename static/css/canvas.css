@@ -225,8 +225,7 @@ body.canvas-board-pan * { cursor:grabbing !important; user-select:none !importan
 .link-delete { position:absolute; width:22px; height:22px; border-radius:999px; display:flex; align-items:center; justify-content:center; transform:translate(-50%,-50%); color:#64748b; background:rgba(255,255,255,.94); border:1px solid #e2e8f0; box-shadow:0 8px 20px rgba(15,23,42,.12); opacity:0; pointer-events:none; transition:opacity .14s var(--ease), color .14s var(--ease), border-color .14s var(--ease), background .14s var(--ease); }
 .link-delete.visible,.link-delete.hover { opacity:1; pointer-events:auto; }
 .link-delete.hover { color:#dc2626; border-color:#fecaca; background:#fff5f5; }
-.node { position:absolute; min-width:220px; min-height:96px; border:1px solid var(--line); border-radius:22px; background:var(--card); box-shadow:0 16px 42px var(--shadow); overflow:visible; user-select:none; z-index:2; }
-.node::before { content:""; position:absolute; inset:0; border-radius:inherit; background:var(--card); pointer-events:none; z-index:-1; overflow:hidden; }
+.node { position:absolute; min-width:220px; min-height:96px; border:1px solid var(--line); border-radius:22px; background:linear-gradient(180deg, rgba(255,255,255,.88), rgba(255,255,255,.62)); box-shadow:0 16px 42px var(--shadow), inset 0 1px 0 rgba(255,255,255,.85), inset 0 -1px 0 rgba(15,23,42,.05); overflow:visible; user-select:none; z-index:2; }
 .node.sized { display:flex; flex-direction:column; }
 .node.selected { outline:2px solid var(--strong); outline-offset:2px; }
 .node-head { height:42px; flex:0 0 42px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:0 12px; border-bottom:1px solid var(--line); border-radius:21px 21px 0 0; overflow:hidden; cursor:move; }
@@ -1697,7 +1696,7 @@ html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .tool
 .node.promptGroup-node{ --node-accent:var(--node-group); }
 
 /* 1) 压平卡片：小圆角 + 细描边 + 极轻阴影（原来是 22px 圆角 + 大范围投影） */
-.node { border-radius:var(--r-lg); border:1px solid var(--line); box-shadow:var(--shadow-card); }
+.node { border-radius:var(--r-lg); border:1px solid var(--line); box-shadow:var(--shadow-card), inset 0 1px 0 rgba(255,255,255,.85), inset 0 -1px 0 rgba(15,23,42,.05); }
 .node:hover { border-color:var(--line-2); }
 /* 左侧类型色条：3px 内嵌，扫视时一眼分辨类型 */
 .node::after { content:""; position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:0 3px 3px 0; background:var(--node-accent); opacity:.85; pointer-events:none; }
