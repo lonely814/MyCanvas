@@ -1480,6 +1480,7 @@ function refreshGeometryAfterLayout(){
 function scheduleSave(){
     if(!canvas || applyingRemoteCanvas) return;
     localCanvasDirty = true;
+    document.getElementById('canvasConflictModal')?.classList.remove('open');
     setStatus('Saving...');
     clearTimeout(saveTimer);
     if(savingCanvasNow){
@@ -2178,7 +2179,9 @@ function applyRemoteCanvasData(remote){
         pruneMissingComfyWorkflows();
         refreshMissingCanvasAssets().then(() => render());
         selected = new Set([...localSelectedIds].filter(id => nodes.some(node => node.id === id)));
-        // 远端版本已覆盖本地内容，重做栈里的快照不再对应当前文档，丢弃。
+        // 远端版本已覆盖本地内容，本地撤销/重做栈里的快照都不再对应当前文档，一并丢弃
+        //（只清 redo 的话，同步后按一次 Ctrl+Z 会把他人刚保存的内容整个回滚掉）。
+        undoStack.length = 0;
         redoStack.length = 0;
         refreshHistoryButtons();
         renderCanvasList();
@@ -2247,6 +2250,11 @@ async function syncRemoteCanvasNow(){
         const data = await res.json();
         const remote = data.canvas;
         if(Number(remote?.updated_at || 0) >= Number(lastCanvasUpdatedAt || 0)){
+            if(localCanvasDirty || saveCanvasAgain){
+                // 轮询路径同样尊重本地未保存改动，与广播路径走同一个冲突弹窗。
+                promptRemoteConflict();
+                return;
+            }
             applyRemoteCanvasData(remote);
         }
     } catch(e) {
@@ -2288,12 +2296,44 @@ function handleCanvasUpdatedMessage(data){
     if(data.canvas_id !== canvas.id) return;
     const remoteUpdatedAt = Number(data.updated_at || 0);
     if(remoteUpdatedAt && remoteUpdatedAt <= Number(lastCanvasUpdatedAt || 0)) return;
+    if(localCanvasDirty || saveCanvasAgain){
+        // 本窗口有未保存改动：不能默默丢弃，交给冲突弹窗让用户二选一。
+        promptRemoteConflict();
+        return;
+    }
     clearTimeout(saveTimer);
     saveTimer = null;
     localCanvasDirty = false;
     clearTimeout(remoteSyncTimer);
     remoteSyncTimer = setTimeout(syncRemoteCanvasNow, savingCanvasNow ? 700 : 120);
     setStatus('Syncing...');
+}
+let remoteConflictPromptAt = 0;
+function promptRemoteConflict(){
+    const now = nowMs();
+    // 冷却期内只改状态栏：另一窗口连续保存时不要反复弹窗打扰。
+    if(now - remoteConflictPromptAt < 30000){
+        setStatus(tr('canvas.remoteKeepHint'));
+        return;
+    }
+    remoteConflictPromptAt = now;
+    setStatus(tr('canvas.remoteConflictTitle'));
+    const modal = document.getElementById('canvasConflictModal');
+    if(!modal) return;
+    modal.classList.add('open');
+    refreshIcons();
+}
+function resolveRemoteConflict(loadLatest){
+    document.getElementById('canvasConflictModal')?.classList.remove('open');
+    if(loadLatest){
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        localCanvasDirty = false;
+        saveCanvasAgain = false;
+        syncRemoteCanvasNow();
+    } else {
+        setStatus(tr('canvas.remoteKeepHint'));
+    }
 }
 async function returnToCanvasManager(){
     clearTimeout(saveTimer);

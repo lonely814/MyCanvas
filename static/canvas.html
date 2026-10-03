@@ -365,6 +365,19 @@
                 </div>
             </div>
         </div>
+        <div id="canvasConflictModal" class="error-modal">
+            <div class="error-panel" onclick="event.stopPropagation()">
+                <div class="error-head">
+                    <div class="error-title" data-i18n="canvas.remoteConflictTitle">画布已在其他窗口修改</div>
+                    <button class="preview-icon-btn" type="button" title="关闭" aria-label="关闭" onclick="resolveRemoteConflict(false)"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+                <div class="error-message" data-i18n="canvas.remoteConflictBody">其他窗口保存了新版本。载入最新版本会丢弃本窗口未保存的改动；保留当前窗口则下次保存时会覆盖其他窗口的版本。</div>
+                <div class="error-actions">
+                    <button class="error-btn" type="button" onclick="resolveRemoteConflict(true)" data-i18n="canvas.remoteConflictLoad">载入最新版本</button>
+                    <button class="error-btn primary" type="button" onclick="resolveRemoteConflict(false)" data-i18n="canvas.remoteConflictKeep">保留当前窗口</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="/static/js/ltx-director-timeline.js?v=2026.09.26.1787881168"></script>
