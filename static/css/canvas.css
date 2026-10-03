@@ -205,7 +205,7 @@ body.studio-theme-dark .canvas-meta-pop .emoji-option:hover { background:#263449
     .toolbar { width:100%; max-width:calc(100vw - 28px); }
     .canvas-nav { min-width:0; width:100%; max-width:calc(100vw - 28px); }
 }
-.board { position:absolute; inset:0; cursor:grab; background-color:var(--page); background-image:radial-gradient(var(--grid) 1px, transparent 1px); background-size:24px 24px; }
+.board { position:absolute; inset:0; cursor:default; background-color:var(--page); background-image:radial-gradient(var(--grid) 1px, transparent 1px); background-size:24px 24px; }
 .shell.zoom-preview .board,
 body.canvas-zoom-preview .node { cursor:crosshair !important; }
 body.canvas-knife .board,
