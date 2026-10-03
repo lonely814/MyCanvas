@@ -70,10 +70,13 @@
 
     function fireWheel(x, y, deltaY){
         const target = document.elementFromPoint(x, y) || document.body;
-        target.dispatchEvent(new WheelEvent('wheel', {
+        const ev = new WheelEvent('wheel', {
             bubbles: true, cancelable: true, composed: true, view: window,
             clientX: x, clientY: y, deltaY: deltaY, deltaMode: 0
-        }));
+        });
+        // 画布端据此把捏合的缩放强度调到跟手 1:1（鼠标滚轮一格的强度对捏合来说太猛）
+        ev.__touchBridgeWheel = true;
+        target.dispatchEvent(ev);
     }
 
     function pinchState(touches){

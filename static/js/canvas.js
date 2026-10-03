@@ -16594,21 +16594,64 @@ board.oncontextmenu = e => {
     openCreateMenu(e.clientX, e.clientY);
 };
 board.addEventListener('mousedown', e => {
+    stopZoomAnim();  // 拖拽/点按接管视口前先停掉缩放动画，避免两边抢 viewport
     if(e.target.closest?.('#createMenu, #linkCreateMenu, #nodeInputMenu, #nodeOutputMenu, #imageNodeMenu')) return;
     closeCreateMenu();
 });
+// 滚轮缩放：滚动量连续换算 + 目标值 rAF 缓动（Figma 式）。
+// 旧实现每格固定 ±8% 且立即跳变，0.5↔2 要滚十几格、视觉上一顿一顿；
+// 也没处理 deltaMode/触控板小步长，且无上下限可以缩到无穷小。
+let zoomAnimRaf = 0;
+let zoomAnim = null;  // {fromScale,toScale,start,duration,cx,cy,wx,wy}
+const ZOOM_WHEEL_STRENGTH = 0.0016;  // exp 强度：鼠标一格(≈100px) ≈ ×1.17，0.5↔2 约 9 格
+const ZOOM_PINCH_STRENGTH = 0.0006;  // 触屏捏合合成 wheel（每次 ±100/0.06log）按 1:1 跟手
+const ZOOM_SCALE_MIN = 0.15;
+const ZOOM_SCALE_MAX = 4;
+function stopZoomAnim(){
+    if(zoomAnimRaf){ cancelAnimationFrame(zoomAnimRaf); zoomAnimRaf = 0; }
+    zoomAnim = null;
+}
+function zoomAnimFrame(){
+    zoomAnimRaf = 0;
+    if(!zoomAnim) return;
+    const t = Math.min(1, (performance.now() - zoomAnim.start) / zoomAnim.duration);
+    const k = 1 - Math.pow(1 - t, 3);  // easeOutCubic：起手跟手、收尾顺滑
+    const scale = zoomAnim.fromScale + (zoomAnim.toScale - zoomAnim.fromScale) * k;
+    viewport.scale = scale;
+    viewport.x = zoomAnim.cx - zoomAnim.wx * scale;
+    viewport.y = zoomAnim.cy - zoomAnim.wy * scale;
+    applyViewport();
+    scheduleLinksRender();
+    renderSelectionHub();
+    scheduleViewportSave();
+    if(t < 1) zoomAnimRaf = requestAnimationFrame(zoomAnimFrame);
+    else zoomAnim = null;
+}
 board.onwheel = e => {
     if(!canvas) return;
     e.preventDefault();
-    const before = screenToWorld(e.clientX, e.clientY);
-    viewport.scale = viewport.scale * (e.deltaY > 0 ? .92 : 1.08);
+    let dy = e.deltaY;
+    if(e.deltaMode === 1) dy *= 33;        // 行模式（Firefox）折算成像素量级
+    else if(e.deltaMode === 2) dy *= 400;  // 页模式
+    const strength = e.__touchBridgeWheel ? ZOOM_PINCH_STRENGTH : ZOOM_WHEEL_STRENGTH;
+    const targetRaw = viewport.scale * Math.exp(-dy * strength);
+    // 软钳制：不把已经在极小/极大档位的视图硬拽回界内
+    const lo = Math.min(ZOOM_SCALE_MIN, viewport.scale);
+    const hi = Math.max(ZOOM_SCALE_MAX, viewport.scale);
+    const target = Math.min(hi, Math.max(lo, targetRaw));
+    if(target === viewport.scale && !zoomAnim) return;
     const rect = board.getBoundingClientRect();
-    viewport.x = e.clientX - rect.left - before.x * viewport.scale;
-    viewport.y = e.clientY - rect.top - before.y * viewport.scale;
-    applyViewport();
-    scheduleLinksRender();  // 性能：原来同步全量重建连线（每条 2 次 rect 读取），滚轮连续触发即掉帧
-    renderSelectionHub();
-    scheduleViewportSave();
+    zoomAnim = {
+        fromScale: viewport.scale,
+        toScale: target,
+        start: performance.now(),
+        duration: 150,
+        cx: e.clientX - rect.left,
+        cy: e.clientY - rect.top,
+        wx: (e.clientX - rect.left - viewport.x) / viewport.scale,
+        wy: (e.clientY - rect.top - viewport.y) / viewport.scale
+    };
+    if(!zoomAnimRaf) zoomAnimRaf = requestAnimationFrame(zoomAnimFrame);
 };
 board.addEventListener('dragover', e => {
     if(e.target.closest?.('.image-node')){
