@@ -719,15 +719,10 @@ async def runninghub_upload_asset(payload: RunningHubUploadAssetRequest):
 
         elif source_url.startswith(("http://", "https://")):
 
-            response = await client.get(source_url)
+            # SSRF 防护：复用 core 的逐跳校验下载（内网/重定向绕过均被拦），内部限 200MB
+            content, content_type = await asyncio.to_thread(core.fetch_remote_media_bytes, source_url, 240.0)
 
-            if not response.is_success:
-
-                raise HTTPException(status_code=400, detail=f"下载素材失败 HTTP {response.status_code}")
-
-            content = response.content
-
-            content_type = response.headers.get("content-type") or content_type
+            content_type = content_type or content_type_for_path(source_url)
 
             filename = os.path.basename(urllib.parse.urlsplit(source_url).path) or filename
 

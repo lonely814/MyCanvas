@@ -647,7 +647,8 @@ function localViewportForCanvas(canvasId, fallback={x:0, y:0, scale:1}){
     return {
         x:Number.isFinite(Number(item.x)) ? Number(item.x) : Number(fallback.x || 0),
         y:Number.isFinite(Number(item.y)) ? Number(item.y) : Number(fallback.y || 0),
-        scale:Number.isFinite(Number(item.scale)) ? Math.max(.12, Math.min(8, Number(item.scale))) : Number(fallback.scale || 1)
+        // 与滚轮缩放下限（ZOOM_SCALE_MIN/MAX）一致，避免 fit(0.06) 后刷新视图跳变
+        scale:Number.isFinite(Number(item.scale)) ? Math.max(0.15, Math.min(4, Number(item.scale))) : Number(fallback.scale || 1)
     };
 }
 function saveLocalViewport(){
@@ -1545,12 +1546,22 @@ function canvasSavePayload(){
 async function flushCanvasSaveOnLeave(){
     // 关闭/离开页面的尽力保存：keepalive 让请求在页面卸载后仍能发完。
     // 常规自动保存已覆盖绝大多数场景，这里只兜「最后 500ms 防抖窗口内的编辑」。
+    // 注意 keepalive 请求体有 64KB 硬上限（超限 Chrome 同步抛 TypeError），
+    // 所以这里丢掉 logs、只带节点与连线——日志少最后一次也没关系，节点不能丢。
     if(!canvas || applyingRemoteCanvas || !localCanvasDirty) return;
     try {
         await fetch(`/api/canvases/${canvas.id}`, {
             method:'PUT',
             headers:{'Content-Type':'application/json'},
-            body:canvasSavePayload(),
+            body:JSON.stringify({
+                title:canvas.title,
+                icon:canvas.icon || '🧩',
+                nodes:serializableCanvasNodes(),
+                connections,
+                viewport,
+                client_id:CLIENT_ID,
+                base_updated_at:Number(lastCanvasUpdatedAt || canvas.updated_at || 0)
+            }),
             keepalive:true
         });
     } catch(e) {
@@ -2009,6 +2020,7 @@ async function createCanvas(){
         resetCascadeRuntimeState();
         canvas = data.canvas;
         canvas.logs = canvas.logs || [];
+        destroyAllLTXEditors();
         nodes = canvas.nodes || [];
         connections = canvas.connections || [];
         viewport = localViewportForCanvas(canvas.id, canvas.viewport || {x:0, y:0, scale:1});
@@ -2148,6 +2160,7 @@ async function openCanvas(id){
         const touched = await touchCanvasOpened(canvas.id);
         if(touched?.updated_at) canvas.updated_at = Number(touched.updated_at);
         canvas.logs = canvas.logs || [];
+        destroyAllLTXEditors();
         nodes = canvas.nodes || [];
         connections = canvas.connections || [];
         viewport = localViewportForCanvas(canvas.id, canvas.viewport || {x:0, y:0, scale:1});
@@ -2186,6 +2199,7 @@ function applyRemoteCanvasData(remote){
         const localSelectedIds = new Set(selected);
         canvas = remote;
         canvas.logs = canvas.logs || [];
+        destroyAllLTXEditors();
         nodes = canvas.nodes || [];
         connections = canvas.connections || [];
         viewport = localViewport;
@@ -6176,13 +6190,17 @@ window.addEventListener('mouseup', () => { cropDrag = null; document.getElementB
 async function uploadCroppedBlob(blob, name){
     const form = new FormData();
     form.append('files', blob, name);
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json());
+    const res = await fetch('/api/ai/upload', {method:'POST', body:form});
+    if(!res.ok) throw new Error(await responseErrorMessage(res, '上传失败'));
+    const data = await res.json().catch(() => ({}));
     return data.files?.[0];
 }
 async function uploadImageBlobs(blobs){
     const form = new FormData();
     blobs.forEach(item => form.append('files', item.blob, item.name));
-    const data = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r=>r.json());
+    const res = await fetch('/api/ai/upload', {method:'POST', body:form});
+    if(!res.ok) throw new Error(await responseErrorMessage(res, '上传失败'));
+    const data = await res.json().catch(() => ({}));
     return data.files || [];
 }
 async function applyImageCrop(){
@@ -6695,6 +6713,11 @@ function destroyLTXEditor(node){
     try { node._ltxEditor.destroy?.(); } catch(e) {}
     node._ltxEditor = null;
 }
+// nodes 数组被整体替换（新建/打开/远端同步/撤销恢复）时，旧节点对象即将被丢弃，
+// 但其 _ltxEditor 实例挂着 window 级监听与常驻 rAF 轮询，不销毁就按次泄漏。
+function destroyAllLTXEditors(list=nodes){
+    (list || []).forEach(destroyLTXEditor);
+}
 function isNodeDragSurface(target){
     return !isNodeControl(target) && !target.closest('.port, .resize-handle, .output-img-wrap');
 }
@@ -6733,7 +6756,7 @@ function renderNode(node){
         const label = { queued:'排队中', running:'运行中', done:'完成', failed:'失败' }[node.runStatus] || '';
         return `<span class="node-run-status ${node.runStatus}"><span class="dot"></span>${escapeHtml(label)}${node._cascadeIdx?' '+node._cascadeIdx:''}</span>`;
     })() : '';
-    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton('${node.id}', event)" class="node-muted hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
+    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton('${escapeAttr(node.id)}', event)" class="node-muted hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
     const body = document.createElement('div');
     body.className = 'node-body';
     if(node.type === 'image') {
@@ -7601,14 +7624,18 @@ async function addUrlToCanvasAssetLibrary(url, name=''){
 async function uploadFilesToLibrary(files, libraryId, categoryId){
     const form = new FormData();
     [...files].forEach(file => form.append('files', file));
-    const uploaded = await fetch('/api/ai/upload', {method:'POST', body:form}).then(r => r.json());
+    const res = await fetch('/api/ai/upload', {method:'POST', body:form});
+    if(!res.ok) throw new Error(await responseErrorMessage(res, '上传失败'));
+    const uploaded = await res.json().catch(() => ({}));
     const items = (uploaded.files || []).filter(file => file?.url).map(file => ({library_id:libraryId, category_id:categoryId, url:file.url, name:file.name || 'asset'}));
     if(!items.length) return null;
-    return fetch('/api/asset-library/items/batch', {
+    const res2 = await fetch('/api/asset-library/items/batch', {
         method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({library_id:libraryId, category_id:categoryId, items})
-    }).then(r => r.json());
+    });
+    if(!res2.ok) throw new Error(await responseErrorMessage(res2, '保存失败'));
+    return res2.json();
 }
 function openAssetManager(){
     assetManagerModal?.classList.add('open');
@@ -7734,8 +7761,14 @@ function renderWorkflowAssetManager(){
         form.append('library_id', library?.id || '');
         form.append('category_id', cat.id || '');
         [...upload.files].forEach(file => form.append('files', file));
-        const data = await fetch('/api/asset-library/workflows/upload', {method:'POST', body:form}).then(r => r.json());
-        canvasAssetLibrary = data.library || canvasAssetLibrary;
+        try {
+            const res = await fetch('/api/asset-library/workflows/upload', {method:'POST', body:form});
+            if(!res.ok) throw new Error(await responseErrorMessage(res, '工作流上传失败'));
+            const data = await res.json();
+            canvasAssetLibrary = data.library || canvasAssetLibrary;
+        } catch(err) {
+            showErrorModal(err.message || '工作流上传失败', '资产库');
+        }
         managerSelectedWorkflowIds.clear();
         renderAssetManager();
         renderCanvasAssetLibrary();
@@ -13796,12 +13829,15 @@ async function runLLMChat(nodeId){
     node.messages = node.messages || [];
     const history = node.messages.slice();
     node.messages.push({role:'user', content:message});
+    // 聊天记录随保存 payload 持久化，不设上限会让保存体积随使用线性膨胀
+    if(node.messages.length > 200) node.messages = node.messages.slice(-200);
     node.chatInput = '';
     node.running = true;
     refreshNodes([node.id]);
     try {
         const text = await callCanvasLLM(node, message, history);
         node.messages.push({role:'assistant', content:text});
+        if(node.messages.length > 200) node.messages = node.messages.slice(-200);
         node.outputText = text;
         node.running = false;
         refreshNodes([node.id]);
@@ -15424,6 +15460,7 @@ function pushUndo(){
     refreshHistoryButtons();
 }
 function applySnapshot(state){
+    destroyAllLTXEditors();
     nodes = state.nodes;
     connections = state.connections;
     selected.clear();

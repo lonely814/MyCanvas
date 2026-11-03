@@ -241,13 +241,9 @@ async def import_local_assets_from_urls(payload: LocalAssetUrlImportRequest):
 
                 else:
 
-                    response = await client.get(src_url)
-
-                    response.raise_for_status()
-
-                    content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-
-                    content = response.content
+                    # SSRF 防护：复用 core 的逐跳校验下载（内网/重定向绕过均被拦），
+                    # fetch_remote_media_bytes 内部流式读取并限 200MB，防响应整体撑内存。
+                    content, content_type = await asyncio.to_thread(core.fetch_remote_media_bytes, src_url, 120.0)
 
                     name_path = urllib.parse.urlparse(src_url).path
 

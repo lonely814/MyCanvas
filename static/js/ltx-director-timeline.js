@@ -2,6 +2,11 @@ function isCanvasLTXNode(node) {
   return !!(node && node.type === 'ltxDirector');
 }
 
+// 文件名可能来自上传 file.name 或远端画布同步的数据，进 innerHTML 前必须转义（存储型 XSS 面）
+function ltxEscapeHtml(value) {
+  return String(value == null ? '' : value).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
 const api = (window.comfyAPI && window.comfyAPI.api) ? window.comfyAPI.api : {
   async fetchApi(path, opts) {
     if (path === '/upload/image' && opts && opts.method === 'POST' && opts.body) {
@@ -1823,7 +1828,7 @@ class TimelineEditor {
       this.strengthRow.style.display = "flex";
       this.audioInfoArea.style.display = "block";
       this.audioInfoArea.innerHTML = `
-        File: <span>${seg.fileName || "Unknown"}</span><br>
+        File: <span>${ltxEscapeHtml(seg.fileName) || "Unknown"}</span><br>
         Length: <span>${this.formatTime(seg.audioDurationFrames)}</span> Output Length: <span>${this.formatTime(seg.length)}</span><br>
         Trim-in: <span>${this.formatTime(Math.round(seg.trimStart))}</span> Trim-Out: <span>${this.formatTime(Math.round(seg.audioDurationFrames - (seg.trimStart + seg.length)))}</span>
       `;

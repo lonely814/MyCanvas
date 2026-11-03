@@ -446,15 +446,12 @@ async def ai_models():
 
 async def get_global_token():
 
-    # 优先读 env，回退到 global_config.json（兼容旧数据）
-
+    # 不回传明文 token（此前任何局域网主机都能取走直连 ModelScope 消耗配额）。
+    # 只回掩码与是否存在；调用方应改为不传 api_key、由服务端模型调用接口自行回退
+    # 到集中配置的 token（modelscope_api_key 的空参回退链）。
     saved_token = modelscope_api_key()
 
-    if saved_token:
-
-        return {"token": saved_token}
-
-    if os.path.exists(GLOBAL_CONFIG_FILE):
+    if not saved_token and os.path.exists(GLOBAL_CONFIG_FILE):
 
         try:
 
@@ -462,13 +459,18 @@ async def get_global_token():
 
                 config = json.load(f)
 
-                return {"token": config.get("modelscope_token", "")}
+                saved_token = str(config.get("modelscope_token", "") or "")
 
         except:
 
-            pass
+            saved_token = ""
 
-    return {"token": ""}
+    if not saved_token:
+
+        return {"token": "", "present": False}
+
+    # 只回掩码；调用方应改为不传 api_key，由服务端模型调用接口回退到集中配置
+    return {"token": mask_secret(saved_token), "present": True}
 
 
 
@@ -826,9 +828,8 @@ async def delete_history(req: DeleteHistoryRequest):
 
             if target_record:
 
-                with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-
-                    json.dump(new_history, f, ensure_ascii=False, indent=4)
+                # 与全库其他 JSON 写统一走原子写（写一半断电不再丢整个历史文件）
+                core.write_json_atomic(HISTORY_FILE, new_history, indent=4)
 
 
 

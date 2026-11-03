@@ -211,7 +211,15 @@ def _storage_abs_path(value, fallback):
     text = os.path.expanduser(os.path.expandvars(text))
     if not os.path.isabs(text):
         text = os.path.join(BASE_DIR, text)
-    return os.path.abspath(text)
+    path = os.path.abspath(text)
+    # 存储目录是上传接口的落盘根，不能指向 BASE_DIR 之外（否则上传=项目外任意文件写）
+    root = os.path.abspath(BASE_DIR)
+    try:
+        if os.path.commonpath([root, path]) != root:
+            raise HTTPException(status_code=400, detail=f"存储目录必须在项目目录内：{path}")
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"存储目录必须在项目目录内：{path}")
+    return path
 
 def load_storage_settings():
     raw = {}
@@ -1438,8 +1446,12 @@ def modelscope_provider_config():
     return get_api_provider_exact("modelscope")
 
 def modelscope_api_key(explicit_key: str = ""):
+    value = strip_auth_scheme(explicit_key, "Bearer")
+    # 掩码串来自 /api/config/token 等展示端点，不能当真 key 用；为空则回退服务端配置
+    if "••" in value:
+        value = ""
     return (
-        strip_auth_scheme(explicit_key, "Bearer")
+        value
         or strip_auth_scheme(provider_env_key_value("modelscope"), "Bearer")
         or strip_auth_scheme(MODELSCOPE_API_KEY, "Bearer")
     )
@@ -2546,7 +2558,8 @@ def save_to_history(record):
 
 def get_comfy_history(comfy_address, prompt_id):
     try:
-        with urllib.request.urlopen(f"http://{comfy_address}/history/{prompt_id}") as response:
+        # 无 timeout 时连接僵死会永久占用线程池 worker，拖死全部同步路由
+        with urllib.request.urlopen(f"http://{comfy_address}/history/{prompt_id}", timeout=30) as response:
             return json.loads(response.read())
     except Exception as e:
         return {}
@@ -4394,16 +4407,19 @@ async def codex_prepare_local_media(ref_url):
         temp_paths.append(path)
         return path, temp_paths
     if text.startswith(("http://", "https://")):
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=20.0, read=300.0, write=60.0, pool=20.0), follow_redirects=True) as client:
-            response = await client.get(text)
+        # 复用带 SSRF 校验的下载（内网地址/重定向绕过均被拦）
+        response = await asyncio.to_thread(safe_remote_get, text, None, (20.0, 300.0))
+        try:
             response.raise_for_status()
             clean_path = urllib.parse.urlparse(text).path
             suffix = os.path.splitext(clean_path)[1] or mimetypes.guess_extension(response.headers.get("content-type", "")) or suffix
             fd, path = tempfile.mkstemp(prefix="codex_ref_", suffix=suffix)
             with os.fdopen(fd, "wb") as f:
                 f.write(response.content)
-            temp_paths.append(path)
-            return path, temp_paths
+        finally:
+            response.close()
+        temp_paths.append(path)
+        return path, temp_paths
     raise HTTPException(status_code=400, detail=f"OpenAI CLI 无法读取参考素材：{text[:120]}")
 
 async def codex_reference_paths(reference_images=None):
@@ -5557,16 +5573,19 @@ async def jimeng_prepare_local_media(ref_url, kind="image"):
         temp_paths.append(path)
         return path, temp_paths
     if text.startswith(("http://", "https://")):
-        async with httpx.AsyncClient(timeout=httpx.Timeout(connect=20.0, read=300.0, write=60.0, pool=20.0), follow_redirects=True) as client:
-            response = await client.get(text)
+        # 复用带 SSRF 校验的下载（内网地址/重定向绕过均被拦）
+        response = await asyncio.to_thread(safe_remote_get, text, None, (20.0, 300.0))
+        try:
             response.raise_for_status()
             clean_path = urllib.parse.urlparse(text).path
             suffix = os.path.splitext(clean_path)[1] or mimetypes.guess_extension(response.headers.get("content-type", "")) or suffix
             fd, path = tempfile.mkstemp(prefix="jimeng_ref_", suffix=suffix)
             with os.fdopen(fd, "wb") as f:
                 f.write(response.content)
-            temp_paths.append(path)
-            return path, temp_paths
+        finally:
+            response.close()
+        temp_paths.append(path)
+        return path, temp_paths
     raise HTTPException(status_code=400, detail=f"即梦 CLI 只支持本地文件参考素材，无法读取：{text[:120]}")
 
 async def generate_jimeng_provider_image(prompt, size, model, reference_images=None, provider=None):
@@ -11235,7 +11254,15 @@ async def run_canvas_image_task(task_id: str, payload: OnlineImageRequest):
 
 
 JIMENG_RESUME_MIN_INTERVAL = 5.0
+# 内存态节流表 {task_id: last_check_ts}：不再写进任务记录。
+# 原实现把 resume_checked_at 写盘（canvas_task_update），GET 轮询会每 5s
+# 全量序列化整个任务字典落盘一次（事件循环内同步 IO），且顺带刷新
+# updated_at 让持续被轮询的任务永不过期。节流只需要进程内记住即可，
+# 进程重启后丢一轮节流无碍（重新从 0 开始计）。
+_jimeng_resume_last_check = {}
 _jimeng_resume_inflight = set()
+# asyncio.create_task 只持弱引用，长耗时协程可能中途被 GC（官方文档要求保存引用）
+_jimeng_resume_tasks = set()
 
 
 def maybe_schedule_jimeng_resume(task_id: str, task: dict):
@@ -11244,7 +11271,6 @@ def maybe_schedule_jimeng_resume(task_id: str, task: dict):
     即梦云端排队可能远超单次生成的轮询窗口，任务会停在 jimeng_pending 且没有任何
     东西推进它。前端本来就会持续轮询 GET /api/canvas-image-tasks/{id}，由这里代为
     向即梦续查并把任务推进到 succeeded / failed / 仍在排队。
-    resume_checked_at 存在任务记录里（顺带刷新 updated_at，防止排队期间被 TTL 清掉）。
     """
     if str((task or {}).get("status") or "") != "jimeng_pending":
         return
@@ -11252,11 +11278,21 @@ def maybe_schedule_jimeng_resume(task_id: str, task: dict):
     if not submit_id or task_id in _jimeng_resume_inflight:
         return
     now = time.time()
-    if now - float(task.get("resume_checked_at") or 0) < JIMENG_RESUME_MIN_INTERVAL:
+    if now - float(_jimeng_resume_last_check.get(task_id) or 0) < JIMENG_RESUME_MIN_INTERVAL:
         return
-    canvas_task_update(task_id, resume_checked_at=now)
+    # 排队期间也要防 TTL：只推进度字段不动 updated_at（避免持续轮询=永不过期）。
+    canvas_task_update(task_id, resume_progress=True)
+    _jimeng_resume_last_check[task_id] = now
     _jimeng_resume_inflight.add(task_id)
-    asyncio.create_task(resume_jimeng_canvas_task(task_id, submit_id, str(task.get("kind") or "image")))
+    try:
+        coro = resume_jimeng_canvas_task(task_id, submit_id, str(task.get("kind") or "image"))
+        bg_task = asyncio.create_task(coro)
+        _jimeng_resume_tasks.add(bg_task)
+        bg_task.add_done_callback(_jimeng_resume_tasks.discard)
+    except Exception:
+        # create_task 失败（如无运行中的事件循环）时不能把 inflight 卡死
+        _jimeng_resume_inflight.discard(task_id)
+        _jimeng_resume_last_check.pop(task_id, None)
 
 
 async def resume_jimeng_canvas_task(task_id: str, submit_id: str, kind: str):
@@ -11282,6 +11318,24 @@ async def resume_jimeng_canvas_task(task_id: str, submit_id: str, kind: str):
                     task_id,
                     resume_error_count=count,
                     message=f"即梦续查暂时失败（{count}/5），继续等待：{detail}"[:300],
+                )
+            return
+        except Exception as exc:
+            # 非 HTTP 异常（subprocess OSError、解析异常等）与 HTTPException 同样计数，
+            # 否则会形成每 5s 一次的无退避无限重试。
+            count = int(float(snapshot.get("resume_error_count") or 0)) + 1
+            if count >= 5:
+                canvas_task_update(
+                    task_id,
+                    status="failed",
+                    error=f"即梦续查连续 {count} 次失败：{exc}",
+                    status_code=502,
+                )
+            else:
+                canvas_task_update(
+                    task_id,
+                    resume_error_count=count,
+                    message=f"即梦续查暂时失败（{count}/5），继续等待：{exc}"[:300],
                 )
             return
         failure = jimeng_failure_reason(raw)
@@ -11345,10 +11399,20 @@ async def resume_jimeng_canvas_task(task_id: str, submit_id: str, kind: str):
             resume_error_count=0,
         )
     except Exception as exc:
-        # 续查自身的意外错误不打断轮询：保持现状，下一轮 GET 会再次触发。
-        print(f"[jimeng-resume] 任务 {task_id} 续查异常（下轮轮询会重试）: {exc}", flush=True)
+        # 续查自身的意外错误同样计入失败，避免无限重试；达到阈值判死。
+        try:
+            snapshot = canvas_task_get(task_id)
+            count = int(float(snapshot.get("resume_error_count") or 0)) + 1
+            if count >= 5:
+                canvas_task_update(task_id, status="failed", error=f"即梦续查连续 {count} 次失败：{exc}", status_code=502)
+            else:
+                canvas_task_update(task_id, resume_error_count=count, message=f"即梦续查暂时失败（{count}/5）：{exc}"[:300])
+        except Exception:
+            pass
+        print(f"[jimeng-resume] 任务 {task_id} 续查异常: {exc}", flush=True)
     finally:
         _jimeng_resume_inflight.discard(task_id)
+        _jimeng_resume_last_check.pop(task_id, None)
 
 async def run_canvas_comfy_task(task_id: str, payload: GenerateRequest):
     canvas_task_update(task_id, status="running")

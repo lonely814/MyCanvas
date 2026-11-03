@@ -1093,7 +1093,7 @@ function renderMiniCanvasPreview(target = previewCard, large = false){
                     <div class="mini-card" data-node="${n.id}" style="left:${n.x}px;top:${n.y}px">
                         <span class="mini-port out"></span>
                         <div class="mini-card-head"><i data-lucide="${n.type === 'video' ? 'file-video' : n.type === 'audio' ? 'file-audio' : 'image'}" class="w-3.5 h-3.5"></i><span class="mini-node-title">${typeLabel(n.type)} ${i+1}</span>${miniDeleteButton(n)}</div>
-                        <div class="mini-card-body"><div class="mini-image-drop" onclick="pickMiniImage('${n.id}')">${mediaPreviewHtml(n.type, n.url, n.name || n.value, true)}</div></div>
+                        <div class="mini-card-body"><div class="mini-image-drop" onclick="pickMiniImage('${escapeAttr(n.id)}')">${mediaPreviewHtml(n.type, n.url, n.name || n.value, true)}</div></div>
                     </div>`).join('')}
                 <div class="mini-card comfy-card" data-node="${comfy.id}" style="left:${comfy.x}px;top:${comfy.y}px">
                     <span class="mini-port in"></span><span class="mini-port out"></span>
@@ -1207,8 +1207,12 @@ async function pickMiniImage(nodeId){
         const form = new FormData();
         form.append('files', file);
         try {
-            const data = await fetch('/api/upload', { method:'POST', body:form }).then(r=>r.json());
-            node.value = data.files?.[0]?.comfy_name || data.files?.[0]?.filename || file.name;
+            const resp = await fetch('/api/upload', { method:'POST', body:form });
+            if(!resp.ok) throw new Error(await resp.text().catch(() => `HTTP ${resp.status}`));
+            const data = await resp.json().catch(() => ({}));
+            const uploadedName = data.files?.[0]?.comfy_name || data.files?.[0]?.filename;
+            if(!uploadedName) throw new Error('上传响应缺少文件名');
+            node.value = uploadedName;
         } catch(e){ alert(mediaUploadFailedText(node.type)); }
     };
     input.click();
@@ -1293,8 +1297,11 @@ async function pickImage(fieldId){
         const form = new FormData();
         form.append('files', file);
         try {
-            const data = await fetch('/api/upload', { method:'POST', body:form }).then(r=>r.json());
-            const filename = data.files?.[0]?.comfy_name || data.files?.[0]?.filename || file.name;
+            const resp = await fetch('/api/upload', { method:'POST', body:form });
+            if(!resp.ok) throw new Error(await resp.text().catch(() => `HTTP ${resp.status}`));
+            const data = await resp.json().catch(() => ({}));
+            const filename = data.files?.[0]?.comfy_name || data.files?.[0]?.filename;
+            if(!filename) throw new Error('上传响应缺少文件名');
             previewValues[fieldId] = filename;
         } catch(e){ alert(mediaUploadFailedText(kind)); }
     };
