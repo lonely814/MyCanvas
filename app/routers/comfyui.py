@@ -121,7 +121,7 @@ async def upload_comfyui_base64(payload: Base64UploadRequest):
 
         raise HTTPException(status_code=400, detail="内容为空")
 
-    _, ext = _local_upload_kind_ext(payload.name or "", ct or "image/png")
+    _, ext = core._local_upload_kind_ext(payload.name or "", ct or "image/png")
 
     filename = f"dx_{uuid.uuid4().hex[:12]}{ext or '.png'}"
 

@@ -127,7 +127,7 @@ async def upload_local_assets(files: List[UploadFile] = File(...), folder: str =
 
     uploaded = []
 
-    folder_rel, folder_abs = _local_upload_safe_folder(folder)
+    folder_rel, folder_abs = core._local_upload_safe_folder(folder)
 
     os.makedirs(folder_abs, exist_ok=True)
 
@@ -171,7 +171,7 @@ async def upload_local_assets(files: List[UploadFile] = File(...), folder: str =
 
             if classification:
 
-                _write_local_upload_classification(rel_name, classification)
+                core._write_local_upload_classification(rel_name, classification)
 
         uploaded.append(_local_upload_item(rel_name))
 
@@ -187,7 +187,7 @@ async def import_local_assets_from_urls(payload: LocalAssetUrlImportRequest):
 
     results = []
 
-    folder_rel, folder_abs = _local_upload_safe_folder(payload.folder)
+    folder_rel, folder_abs = core._local_upload_safe_folder(payload.folder)
 
     os.makedirs(folder_abs, exist_ok=True)
 
@@ -303,7 +303,7 @@ async def import_local_assets_from_urls(payload: LocalAssetUrlImportRequest):
 
                     if classification:
 
-                        _write_local_upload_classification(rel_name, classification)
+                        core._write_local_upload_classification(rel_name, classification)
 
                 item = _local_upload_item(rel_name)
 
@@ -341,17 +341,17 @@ async def create_local_asset_folder(payload: LocalAssetFolderRequest, request: R
 
     ensure_same_origin_request(request)
 
-    parent_rel, parent_abs = _local_upload_safe_folder(payload.parent)
+    parent_rel, parent_abs = core._local_upload_safe_folder(payload.parent)
 
     if not os.path.isdir(parent_abs):
 
         raise HTTPException(status_code=404, detail="父文件夹不存在")
 
-    name = _local_upload_safe_folder_name(payload.name)
+    name = core._local_upload_safe_folder_name(payload.name)
 
     rel = f"{parent_rel}/{name}".lstrip("/")
 
-    _, abs_path = _local_upload_safe_folder(rel)
+    _, abs_path = core._local_upload_safe_folder(rel)
 
     if os.path.exists(abs_path):
 
@@ -371,7 +371,7 @@ async def rename_local_asset_folder(payload: LocalAssetFolderRequest, request: R
 
     ensure_same_origin_request(request)
 
-    rel, abs_path = _local_upload_safe_folder(payload.path)
+    rel, abs_path = core._local_upload_safe_folder(payload.path)
 
     if not rel:
 
@@ -381,13 +381,13 @@ async def rename_local_asset_folder(payload: LocalAssetFolderRequest, request: R
 
         raise HTTPException(status_code=404, detail="文件夹不存在")
 
-    name = _local_upload_safe_folder_name(payload.name)
+    name = core._local_upload_safe_folder_name(payload.name)
 
     parent = os.path.dirname(rel).replace("\\", "/")
 
     new_rel = f"{parent}/{name}".lstrip("/")
 
-    _, new_abs = _local_upload_safe_folder(new_rel)
+    _, new_abs = core._local_upload_safe_folder(new_rel)
 
     if os.path.exists(new_abs):
 
@@ -531,7 +531,7 @@ async def move_local_assets(payload: dict, request: Request):
 
     folder_value = str(payload.get("folder") or "").strip() if isinstance(payload, dict) else ""
 
-    target_rel, target_abs = _local_upload_safe_folder(folder_value)
+    target_rel, target_abs = core._local_upload_safe_folder(folder_value)
 
     if target_rel and not os.path.isdir(target_abs):
 
@@ -723,7 +723,7 @@ async def classify_local_assets(payload: LocalAssetClassifyRequest):
 
             )
 
-            _write_local_upload_classification(filename, classification)
+            core._write_local_upload_classification(filename, classification)
 
             item.update({
 

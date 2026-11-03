@@ -411,7 +411,7 @@ async def upload_ai_base64(payload: Base64UploadRequest):
 
         raise HTTPException(status_code=413, detail="超过 50MB")
 
-    kind, ext = _local_upload_kind_ext(payload.name or "", ct or "image/png")
+    kind, ext = core._local_upload_kind_ext(payload.name or "", ct or "image/png")
 
     if kind is None:
 
