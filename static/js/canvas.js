@@ -6770,6 +6770,61 @@ function destroyAllLTXEditors(list=nodes){
 function isNodeDragSurface(target){
     return !isNodeControl(target) && !target.closest('.port, .resize-handle, .output-img-wrap');
 }
+// 节点悬浮工具栏：把右键菜单里的高频动作提成一排小按钮，贴在节点上缘，
+// 悬停或选中时出现（触屏 hover:none 常显）。HTML 在 renderNode 里拼进节点，
+// 因此随 renderSig 走（按钮的显隐条件都来自 node 字段，签名必然覆盖）。
+// 点击统一由 nodesEl 捕获阶段委托分发（installNodeToolbarActions）：
+// 节点 DOM 会被增量重建，且节点自身的 onclick 会 stopPropagation，
+// 挂在冒泡阶段的委托根本收不到事件。
+function nodeToolbarHtml(node){
+    const buttons = [];
+    const add = (action, icon, title, disabled=false) => buttons.push(
+        `<button type="button" class="node-tb-btn" data-tb-action="${escapeAttr(action)}" title="${escapeAttr(title)}" aria-label="${escapeAttr(title)}"${disabled ? ' disabled' : ''}><i data-lucide="${escapeAttr(icon)}"></i></button>`
+    );
+    if(node.type === 'image'){
+        const kind = mediaKindForNode(node);
+        const hasMedia = Boolean(node.url) && !isMissingAssetUrl(node.url);
+        if(hasMedia && ['image','video'].includes(kind)) add('preview', 'eye', tr('canvas.nodeTbPreview'));
+        if(hasMedia && kind === 'image') add('edit', 'pencil', tr('canvas.nodeTbEdit'));
+        add('replace', 'image-plus', tr('canvas.nodeTbReplace'));
+    } else if(node.type === 'output'){
+        const imageCount = outputImageUrls(node).length;
+        add('download', 'download', tr('canvas.outputDownloadAllImages'), !outputDownloadableImageUrls(node).length);
+        add('convert', 'replace', tr('canvas.outputConvertToInputGroup'), !imageCount);
+        add('copy-input', 'copy-plus', tr('canvas.outputCopyToInputGroup'), !imageCount);
+    } else if(node.type === 'group' || node.type === 'promptGroup'){
+        add('ungroup', 'ungroup', tr('canvas.ungroup'));
+    }
+    add('duplicate', 'copy', tr('canvas.nodeTbDuplicate'));
+    return `<div class="node-tb">${buttons.join('')}</div>`;
+}
+function installNodeToolbarActions(){
+    nodesEl.addEventListener('click', e => {
+        const btn = e.target.closest?.('.node-tb-btn');
+        if(!btn || btn.disabled) return;
+        const host = btn.closest('.node[data-id]');
+        if(!host) return;
+        e.preventDefault();
+        e.stopPropagation();
+        closeCreateMenu();
+        const action = btn.dataset.tbAction;
+        const nodeId = host.dataset.id;
+        if(action === 'preview') openImageNodePreview(nodeId);
+        else if(action === 'edit') openImageEditor(nodeId);
+        else if(action === 'replace') pickImageForNode(nodeId);
+        else if(action === 'download') downloadOutputNodeImages(nodeId);
+        else if(action === 'convert') convertOutputNodeToInputGroup(nodeId);
+        else if(action === 'copy-input') copyOutputNodeToInputGroup(nodeId);
+        else if(action === 'ungroup'){
+            // ungroupSelected 只认 selected 里的分组，先临时单选它
+            selected.clear();
+            selected.add(nodeId);
+            refreshSelectionVisuals();
+            ungroupSelected();
+        }
+        else if(action === 'duplicate') duplicateNodeFromToolbar(nodeId);
+    }, true);
+}
 function renderNode(node){
     normalizeApiNodeLayout(node);
     if(node.type === 'rh' && Number(node.h) === 560) delete node.h;
@@ -6808,7 +6863,7 @@ function renderNode(node){
         const label = { queued:'排队中', running:'运行中', done:'完成', failed:'失败' }[node.runStatus] || '';
         return `<span class="node-run-status ${node.runStatus}"><span class="dot"></span>${escapeHtml(label)}${node._cascadeIdx?' '+node._cascadeIdx:''}</span>`;
     })() : '';
-    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton(${jsArg(node.id)}, event)" class="node-muted hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
+    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton(${jsArg(node.id)}, event)" class="node-muted hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>${nodeToolbarHtml(node)}`;
     const body = document.createElement('div');
     body.className = 'node-body';
     if(node.type === 'image') {
@@ -15591,6 +15646,33 @@ function duplicateNodesForAltDrag(node, preserveConnections=false){
     }
     return copy;
 }
+// 悬浮工具栏的「复制节点」：克隆即落位（整体偏移 32px），分组成员一并克隆并重映射 items。
+// 与 Alt+拖拽复制不同，这里没有后续拖拽，所以直接 pushUndo + 选中副本。
+function duplicateNodeFromToolbar(nodeId){
+    const node = nodes.find(n => n.id === nodeId);
+    if(!node || !canvas) return;
+    pushUndo();
+    const sourceIds = new Set([node.id]);
+    if(node.type === 'group' || node.type === 'promptGroup')
+        (node.items || []).forEach(id => sourceIds.add(id));
+    const idMap = new Map();
+    const copies = [...sourceIds]
+        .map(id => nodes.find(n => n.id === id))
+        .filter(Boolean)
+        .map(n => { const c = cloneNode(n, 32, 32); idMap.set(n.id, c.id); return c; });
+    copies.forEach(c => {
+        if((c.type === 'group' || c.type === 'promptGroup') && c.items)
+            c.items = c.items.map(id => idMap.get(id) || id);
+    });
+    nodes.push(...copies);
+    selected.clear();
+    selected.add(idMap.get(node.id));
+    sanitizeConnections();
+    syncGeneratorInputs();
+    refreshSelectionVisuals();
+    render();
+    scheduleSave();
+}
 function copySelectedNodes(){
     if(!canvas || !selected.size) return;
     const el = document.activeElement;
@@ -17044,6 +17126,7 @@ function jsArg(value){ return escapeHtml(JSON.stringify(String(value == null ? '
 window.onload = async () => {
     renderToolbarNodeButtons();  // 工具栏节点按钮由 NODE_TYPES 生成（与右键菜单同源）
     installNodeHoverHighlight();
+    installNodeToolbarActions();
     installCanvasShortcuts();
     applyTheme(localStorage.getItem('studio_theme') || localStorage.getItem(CANVAS_THEME_KEY) || 'light');
     applyQuickToolbarState();

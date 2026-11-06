@@ -1944,3 +1944,53 @@ html.theme-black body .shell #board .link { stroke:rgba(255,255,255,.18); }
     .canvas-card-edit { width: 32px; height: 32px; }
     .resize-handle { width: 26px; height: 26px; }
 }
+
+/* ==== 批次6：节点悬浮工具栏 ====
+
+   把右键菜单里的高频动作（预览/编辑/替换/下载/解散/复制）提成一排小按钮。
+   贴在节点上缘且与节点边框齐平——不留缝，否则鼠标移向工具栏时 :hover
+   断开，工具栏会当场闪没。悬停或选中出现；触屏 hover:none 常显。
+   沿用批次5 约定：追加覆盖、不改旧规则；深浅色用长前缀 + !important。 */
+
+.node-tb {
+    position:absolute; top:-32px; right:0;
+    display:flex; align-items:center; gap:2px;
+    padding:3px;
+    background:#fff;
+    border:1px solid rgba(17,24,39,.14);
+    border-radius:6px;
+    box-shadow:0 1px 0 rgba(17,24,39,.04);
+    opacity:0; pointer-events:none;
+    transition:opacity .12s var(--ease);
+    z-index:6;
+}
+.node:hover > .node-tb,
+.node.selected > .node-tb { opacity:1; pointer-events:auto; }
+.node-tb button {
+    width:24px; height:24px;
+    display:flex; align-items:center; justify-content:center;
+    padding:0; border:0; border-radius:4px;
+    background:transparent; color:#6b7280;
+    cursor:pointer;
+}
+.node-tb button:hover { background:rgba(17,24,39,.06); color:#111827; }
+.node-tb button:disabled { opacity:.35; cursor:default; background:transparent; }
+.node-tb svg { width:13px; height:13px; }
+/* 深色（暗房）与纯黑：theme.css 是硬编码 !important，普通规则压不过 */
+html.studio-theme-dark body .shell #board .node > .node-tb { background:#1c1f26 !important; border-color:rgba(255,255,255,.12) !important; box-shadow:none !important; }
+html.studio-theme-dark body .shell #board .node > .node-tb button { color:#9aa3b2 !important; background:transparent !important; }
+html.studio-theme-dark body .shell #board .node > .node-tb button:hover { background:rgba(255,255,255,.09) !important; color:#f3f4f6 !important; }
+html.studio-theme-dark body .shell #board .node > .node-tb button:disabled { opacity:.35 !important; }
+html.theme-black body .shell #board .node > .node-tb { background:#17171a !important; border-color:rgba(255,255,255,.14) !important; box-shadow:none !important; }
+html.theme-black body .shell #board .node > .node-tb button { color:#8a8a8e !important; background:transparent !important; }
+html.theme-black body .shell #board .node > .node-tb button:hover { background:rgba(255,255,255,.1) !important; color:#ededed !important; }
+html.theme-black body .shell #board .node > .node-tb button:disabled { opacity:.35 !important; }
+/* 触屏：没有 hover，常显 + 手指可点中的尺寸 */
+@media (hover: none) {
+    .node > .node-tb { opacity:.62; pointer-events:auto; }
+    .node:hover > .node-tb,
+    .node.selected > .node-tb { opacity:1; }
+    .node-tb button { width:32px; height:32px; }
+    .node-tb svg { width:15px; height:15px; }
+}
+/* ==== 批次6 结束 ==== */
