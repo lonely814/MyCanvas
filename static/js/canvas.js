@@ -16715,7 +16715,7 @@ board.addEventListener('mousedown', e => {
 // 也没处理 deltaMode/触控板小步长，且无上下限可以缩到无穷小。
 let zoomAnimRaf = 0;
 let zoomAnim = null;  // {fromScale,toScale,start,duration,cx,cy,wx,wy}
-const ZOOM_WHEEL_STRENGTH = 0.0022;  // exp 强度：鼠标一格(≈100px) ≈ ×1.25，0.5↔2 约 6 格
+const ZOOM_WHEEL_STRENGTH = 0.0032;  // exp 强度：鼠标一格(≈100px) ≈ ×1.38，0.5↔2 约 4.5 格
 const ZOOM_PINCH_STRENGTH = 0.0006;  // 触屏捏合合成 wheel（每次 ±100/0.06log）按 1:1 跟手
 const ZOOM_SCALE_MIN = 0.15;
 const ZOOM_SCALE_MAX = 4;
@@ -16746,13 +16746,19 @@ board.onwheel = e => {
     if(e.deltaMode === 1) dy *= 33;        // 行模式（Firefox）折算成像素量级
     else if(e.deltaMode === 2) dy *= 400;  // 页模式
     const strength = e.__touchBridgeWheel ? ZOOM_PINCH_STRENGTH : ZOOM_WHEEL_STRENGTH;
-    const targetRaw = viewport.scale * Math.exp(-dy * strength);
+    // 累加基准用「上一次滚轮的目标值」而不是当前动画中的 scale：
+    // 连续快滚时动画还没走完，用当前 scale 重算会把上一个目标剩余的那段增量直接丢掉，
+    // 实测 45ms 间隔连滚 4 格比慢滚少 18%~36%，感觉就是「滚了但没缩多少」。
+    // 上一个动画已经结束（或是别的操作打断了它）时，基准回到实际 scale。
+    const base = (zoomAnim && zoomAnim.toScale) || viewport.scale;
+    const targetRaw = base * Math.exp(-dy * strength);
     // 软钳制：不把已经在极小/极大档位的视图硬拽回界内
     const lo = Math.min(ZOOM_SCALE_MIN, viewport.scale);
     const hi = Math.max(ZOOM_SCALE_MAX, viewport.scale);
     const target = Math.min(hi, Math.max(lo, targetRaw));
-    if(target === viewport.scale && !zoomAnim) return;
+    if(target === base && !zoomAnim) return;
     const rect = board.getBoundingClientRect();
+    // 锚点在世界坐标里保持不动：以动画当前实际 scale 换算，手指下的那个点才不会横向漂移
     zoomAnim = {
         fromScale: viewport.scale,
         toScale: target,
