@@ -12533,6 +12533,235 @@ def workflow_config_path(name: str) -> str:
 def is_builtin_workflow(name: str) -> bool:
     return "/" not in name and os.path.basename(name) in BUILTIN_WORKFLOWS
 
+# ---------------------------------------------------------------------------
+# ComfyUI 工作流 IO 自动抽取：导入工作流时扫出媒体输入、提示词、随机种子与
+# 输出节点，自动生成字段配置，免掉在设置页逐个节点手动点选；画布导入则据此
+# 生成"提示词 → ComfyUI 生成 → 输出"子图。
+# ---------------------------------------------------------------------------
+
+# 媒体加载节点 → (字段类型, 取值输入名)。覆盖官方与常用 VHS 节点；
+# 表外节点按 class_type 关键词 + 实际存在的字符串输入兜底。
+COMFY_MEDIA_LOADERS = {
+    "LoadImage": ("image", "image"),
+    "LoadImageMask": ("image", "image"),
+    "LoadImageOutput": ("image", "image"),
+    "LoadVideo": ("video", "video"),
+    "LoadVideoUpload": ("video", "video"),
+    "VHS_LoadVideo": ("video", "video"),
+    "VHS_LoadVideoPath": ("video", "video"),
+    "LoadAudio": ("audio", "audio"),
+    "LoadAudioUpload": ("audio", "audio"),
+    "VHS_LoadAudio": ("audio", "audio"),
+    "VHS_LoadAudioUpload": ("audio", "audio"),
+}
+
+# 输出类节点：决定画布导入后要不要接一个输出节点。
+COMFY_OUTPUT_CLASSES = {
+    "SaveImage", "SaveImageWebsocket", "SaveAnimatedWEBP", "SaveAnimatedPNG",
+    "VHS_VideoCombine", "PreviewImage", "PreviewVideo", "PreviewAudio",
+}
+
+# 采样类节点：靠它们的 positive/negative 连接区分正向/负向提示词。
+COMFY_SAMPLER_CLASSES = {"KSampler", "KSamplerAdvanced", "SamplerCustom", "SamplerCustomAdvanced"}
+
+# 备注类节点也带 text 输入，但内容是注释不是提示词。
+COMFY_NON_PROMPT_CLASSES = {"Note", "MarkdownNote"}
+
+COMFY_PROMPT_INPUT_KEYS = ("text", "positive", "negative", "prompt", "string")
+
+# 兜底匹配媒体加载节点时，按类型在这些输入名里找真实存在的字符串值，
+# 避免给自定义节点猜错输入名（猜错会在运行时报 invalid input）。
+COMFY_MEDIA_INPUT_CANDIDATES = {
+    "image": ("image", "image_path", "imagefile", "file", "filename", "path"),
+    "video": ("video", "video_path", "videofile", "file", "filename", "path"),
+    "audio": ("audio", "audio_path", "audiofile", "file", "filename", "path"),
+}
+
+def is_comfy_api_workflow(workflow) -> bool:
+    """ComfyUI API 格式：dict 且值为含 class_type 的 dict（与上传接口同一判据）。"""
+    if not isinstance(workflow, dict) or not workflow:
+        return False
+    seen_class_type = False
+    for value in workflow.values():
+        if not isinstance(value, dict):
+            return False
+        if "class_type" in value:
+            seen_class_type = True
+    return seen_class_type
+
+def is_comfy_ui_workflow(workflow) -> bool:
+    """ComfyUI 界面格式（Graph 导出）：nodes 数组 + links 数组。"""
+    return (
+        isinstance(workflow, dict)
+        and isinstance(workflow.get("nodes"), list) and bool(workflow.get("nodes"))
+        and isinstance(workflow.get("links"), list)
+    )
+
+def _comfy_media_loader_kind(class_type: str, inputs: dict):
+    pair = COMFY_MEDIA_LOADERS.get(class_type)
+    if pair:
+        return pair
+    lowered = str(class_type or "").lower()
+    if "load" not in lowered and "input" not in lowered:
+        return None
+    for kind in ("image", "video", "audio"):
+        token = "img" if kind == "image" else kind
+        if token not in lowered:
+            continue
+        for name in COMFY_MEDIA_INPUT_CANDIDATES[kind]:
+            if isinstance(inputs.get(name), str):
+                return (kind, name)
+    return None
+
+def analyze_comfy_workflow_io(workflow: dict) -> dict:
+    """扫描 API 格式工作流，抽出输入/输出结构。
+
+    返回 dict：
+    - media:   [{node, input, kind, default}] 媒体加载节点，按出现顺序
+    - prompts: [{node, input, default, follow_upstream, name}] 提示词输入
+    - seeds:   [{node, input, default}] 数值型 seed/noise_seed 输入
+    - has_output: 是否存在输出类节点
+    """
+    media = []
+    seeds = []
+    prompt_nodes = []
+    positive_targets = set()
+    negative_targets = set()
+    has_output = False
+    for node_id, node in workflow.items():
+        if not isinstance(node, dict):
+            continue
+        class_type = str(node.get("class_type") or "")
+        inputs = node.get("inputs") if isinstance(node.get("inputs"), dict) else {}
+        if class_type in COMFY_OUTPUT_CLASSES:
+            has_output = True
+        if class_type in COMFY_SAMPLER_CLASSES:
+            for link_key, target_set in (("positive", positive_targets), ("negative", negative_targets)):
+                link = inputs.get(link_key)
+                if isinstance(link, (list, tuple)) and len(link) == 2:
+                    target_set.add(str(link[0]))
+        if class_type in COMFY_NON_PROMPT_CLASSES:
+            continue
+        pair = _comfy_media_loader_kind(class_type, inputs)
+        if pair:
+            kind, input_name = pair
+            default = inputs.get(input_name)
+            media.append({
+                "node": str(node_id),
+                "input": input_name,
+                "kind": kind,
+                "default": default if isinstance(default, str) else "",
+            })
+            continue
+        for key in COMFY_PROMPT_INPUT_KEYS:
+            value = inputs.get(key)
+            if isinstance(value, str):
+                prompt_nodes.append((str(node_id), key, value))
+                break
+        for key in ("seed", "noise_seed"):
+            value = inputs.get(key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                seeds.append({"node": str(node_id), "input": key, "default": value})
+    prompts = []
+    unnamed_counter = 0
+    for index, (node_id, key, value) in enumerate(prompt_nodes):
+        if node_id in positive_targets:
+            follow, name = True, "正向提示词"
+        elif node_id in negative_targets:
+            # 负向词固定用工作流里的值，不跟随画布上游提示词。
+            follow, name = False, "负向提示词"
+        elif not positive_targets and index == 0:
+            follow, name = True, "正向提示词"
+        else:
+            follow, name = False, ""
+        if not name:
+            unnamed_counter += 1
+            name = f"提示词 {unnamed_counter}"
+        prompts.append({"node": node_id, "input": key, "default": value, "follow_upstream": follow, "name": name})
+    return {"media": media, "prompts": prompts, "seeds": seeds, "has_output": has_output}
+
+def build_comfy_auto_config(workflow: dict, title: str = ""):
+    """按 IO 分析结果生成字段配置（媒体位/提示词/随机种子），返回 (config, io)。"""
+    io = analyze_comfy_workflow_io(workflow)
+    fields = []
+    media_counters = {}
+    media_kind_names = {"image": "图片", "video": "视频", "audio": "音频"}
+    for item in io["media"]:
+        kind = item["kind"]
+        media_counters[kind] = media_counters.get(kind, 0) + 1
+        fields.append({
+            "id": f"f_{uuid.uuid4().hex[:7]}",
+            "node": item["node"],
+            "input": item["input"],
+            "name": f"{media_kind_names.get(kind, kind)} {media_counters[kind]}",
+            "type": kind,
+            "default": item["default"],
+            "image_order": media_counters[kind] - 1,
+            "required": True,
+        })
+    for item in io["prompts"]:
+        field = {
+            "id": f"f_{uuid.uuid4().hex[:7]}",
+            "node": item["node"],
+            "input": item["input"],
+            "name": item["name"],
+            "type": "textarea",
+            "default": item["default"],
+        }
+        if not item["follow_upstream"]:
+            field["source_from_upstream"] = False
+        fields.append(field)
+    for item in io["seeds"]:
+        fields.append({
+            "id": f"f_{uuid.uuid4().hex[:7]}",
+            "node": item["node"],
+            "input": item["input"],
+            "name": "随机种子",
+            "type": "number",
+            "default": item["default"],
+            "min": 1,
+            "max": 4294967295,
+            "step": 1,
+            "random_enabled": True,
+        })
+    config = {"title": title or "导入工作流", "fields": fields, "mini_cards": {}}
+    return config, io
+
+def unique_custom_workflow_name(base_name: str) -> str:
+    """在 custom/ 下取一个不重名的工作流文件名；只取文件名部分。"""
+    stem = os.path.basename(str(base_name or ""))
+    if stem.lower().endswith(".json"):
+        stem = stem[:-5]
+    # 字符集与 WORKFLOW_NAME_RE 对齐，空格/特殊符号换成下划线。
+    stem = re.sub(r"[^a-zA-Z0-9_一-龥\.\-]+", "_", stem).strip("._") or "imported"
+    candidate = f"{stem}.json"
+    index = 1
+    while os.path.exists(workflow_path_from_name(f"{CUSTOM_WORKFLOW_FOLDER}/{candidate}")):
+        index += 1
+        candidate = f"{stem}-{index}.json"
+    return f"{CUSTOM_WORKFLOW_FOLDER}/{candidate}"
+
+def save_comfy_workflow_with_auto_config(stored_name: str, workflow: dict, title: str = ""):
+    """工作流 JSON 落盘；已有配置不覆盖（保留手动调整），没有则自动抽 IO 生成。
+
+    返回 (config, io)。
+    """
+    path = workflow_path_from_name(stored_name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    write_json_atomic(path, workflow, indent=2)
+    cfg_path = workflow_config_path(stored_name)
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if isinstance(config, dict) and isinstance(config.get("fields"), list):
+                return config, analyze_comfy_workflow_io(workflow)
+        except Exception:
+            pass
+    config, io = build_comfy_auto_config(workflow, title)
+    write_json_atomic(cfg_path, config, indent=2)
+    return config, io
+
 def runninghub_workflow_store_path() -> str:
     return RUNNINGHUB_WORKFLOW_STORE_FILE
 

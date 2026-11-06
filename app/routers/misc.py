@@ -1002,6 +1002,16 @@ def upload_workflow(payload: WorkflowUploadRequest):
     # 原子写：写一半崩溃会留下截断 JSON，之后 /api/workflows 列表与运行都解析失败
     write_json_atomic(path, payload.workflow, indent=2)
 
+    # 导入即自动抽 IO：没有配置文件时按工作流内容生成字段（媒体位/提示词/随机种子），
+    # 省去在编辑器里逐个节点手动点选；已有配置不覆盖（保留手动调整）。
+    cfg_path = workflow_config_path(stored_name)
+
+    if not os.path.exists(cfg_path):
+
+        config, _ = build_comfy_auto_config(payload.workflow, os.path.splitext(name)[0])
+
+        write_json_atomic(cfg_path, config, indent=2)
+
     return {"name": stored_name}
 
 

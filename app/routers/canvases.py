@@ -468,6 +468,52 @@ async def import_canvas_workflow(file: UploadFile = File(...)):
 
         raise HTTPException(status_code=400, detail="工作流格式不正确")
 
+    # ComfyUI API 格式（节点 id 为 key、值含 class_type）：转存为 custom 工作流并
+    # 自动抽 IO 字段，画布端据此生成"提示词 → ComfyUI 生成 → 输出"子图。
+    if core.is_comfy_api_workflow(workflow):
+
+        base_title = os.path.splitext(os.path.basename(file.filename or ""))[0] or "导入工作流"
+
+        stored_name = core.unique_custom_workflow_name(base_title)
+
+        title = os.path.splitext(os.path.basename(stored_name))[0]
+
+        config, io = core.save_comfy_workflow_with_auto_config(stored_name, workflow, title)
+
+        return {
+
+            "comfy": True,
+
+            "workflow": stored_name,
+
+            "title": config.get("title") or title,
+
+            "counts": {
+
+                "image": sum(1 for m in io["media"] if m["kind"] == "image"),
+
+                "video": sum(1 for m in io["media"] if m["kind"] == "video"),
+
+                "audio": sum(1 for m in io["media"] if m["kind"] == "audio"),
+
+                "prompt": len(io["prompts"]),
+
+                "seed": len(io["seeds"]),
+
+            },
+
+            "prompt_default": next((p["default"] for p in io["prompts"] if p["follow_upstream"]), ""),
+
+            "has_output": io["has_output"],
+
+        }
+
+    # ComfyUI 界面格式（Graph 导出）：节点结构完全不同，需先在 ComfyUI 里导出 API 格式。
+
+    if core.is_comfy_ui_workflow(workflow):
+
+        raise HTTPException(status_code=400, detail="这是 ComfyUI 界面格式的工作流，请先在 ComfyUI 里导出 API 格式（菜单 Workflow → Export (API)）再导入")
+
     nodes_payload = workflow.get("nodes")
 
     connections_payload = workflow.get("connections")

@@ -15861,11 +15861,76 @@ async function importWorkflowFile(file){
         const res = await fetch('/api/canvas-workflows/import', {method:'POST', body:form});
         if(!res.ok) throw new Error(await responseErrorMessage(res, '导入工作流失败'));
         const data = await res.json();
-        insertWorkflowIntoCanvas(normalizeImportedWorkflow(data));
+        if(data?.comfy){
+            insertComfyWorkflowImport(data);
+        } else {
+            insertWorkflowIntoCanvas(normalizeImportedWorkflow(data));
+        }
         closeWorkflowTransferModal();
     } catch(err) {
         showErrorModal(err.message || '导入工作流失败', '导入工作流');
     }
+}
+// ComfyUI 工作流导入：后端已存好工作流并自动抽好 IO 字段，这里生成
+// 提示词 → ComfyUI 生成 → 输出 子图并接线，媒体位留给用户连图片/视频/音频。
+function insertComfyWorkflowImport(data){
+    if(!canvas) return;
+    const target = lastMouseBoard && Number.isFinite(lastMouseBoard.x) ? lastMouseBoard : defaultPoint(0, 0);
+    const counts = data.counts || {};
+    const hasPrompt = Number(counts.prompt) > 0;
+    const hasOutput = data.has_output !== false;
+    pushUndo();
+    const newNodes = [];
+    const newConnections = [];
+    let cursorX = target.x;
+    let promptNode = null;
+    if(hasPrompt){
+        promptNode = {id:uid('prompt'), type:'prompt', x:cursorX, y:target.y, text:String(data.prompt_default || '')};
+        newNodes.push(promptNode);
+        cursorX += 340;
+    }
+    const comfyNode = {
+        id:uid('comfy'), type:'comfy', x:cursorX, y:target.y, w:420, h:460,
+        mode:'custom',
+        width:1024, height:1024,
+        enhanceStrength:0.5, enhanceUpscale:false, enhanceUpscaleRes:2048,
+        editUpscale:false, editUpscaleRes:2048, editModel:'',
+        ratio:'square', resolution:'1k',
+        customRatio:'', customSize:'', customRatioWidth:'', customRatioHeight:'', customWidth:'', customHeight:'',
+        comfyWorkflow:data.workflow || '', comfyParams:{}, count:1, inputs:[]
+    };
+    newNodes.push(comfyNode);
+    if(promptNode) newConnections.push({id:uid('c'), from:promptNode.id, to:comfyNode.id});
+    if(hasOutput){
+        const outNode = {id:uid('out'), type:'output', x:cursorX + 480, y:target.y + 40, images:[]};
+        newNodes.push(outNode);
+        newConnections.push({id:uid('c'), from:comfyNode.id, to:outNode.id});
+    }
+    nodes.push(...newNodes);
+    connections.push(...newConnections);
+    // 工作流下拉与校验都走 comfyWorkflows 列表，新工作流必须先登记，
+    // 否则 validComfyWorkflowName 会把节点回退成列表里第一个工作流。
+    if(data.workflow && !comfyWorkflows.some(w => w.name === data.workflow)){
+        comfyWorkflows.push({name:data.workflow, title:data.title || data.workflow.replace(/^custom\//, '').replace(/\.json$/, '')});
+    }
+    selected.clear();
+    newNodes.forEach(n => selected.add(n.id));
+    sanitizeConnections();
+    syncGeneratorInputs();
+    render();
+    scheduleSave();
+    const details = [
+        `${counts.image || 0} ${tr('canvas.comfyImportImages')}`,
+        `${counts.video || 0} ${tr('canvas.comfyImportVideos')}`,
+        `${counts.audio || 0} ${tr('canvas.comfyImportAudios')}`,
+        `${counts.seed || 0} ${tr('canvas.comfyImportSeeds')}`
+    ].join(' · ');
+    let message = trf('canvas.comfyImportDone', {title:data.title || '', details});
+    if(!hasOutput) message += ' ' + tr('canvas.comfyImportNoOutput');
+    setStatus(message);
+    // 工作流配置走异步缓存：节点体在缓存为空时已按旧签名复用 DOM，
+    // 填好后必须强制重建该节点，否则媒体位数与参数控件一直是空。
+    if(data.workflow) ensureComfyWorkflow(data.workflow).then(() => refreshNodes([comfyNode.id])).catch(() => {});
 }
 function startNodeDrag(e, node){
     if(e.button !== 0) return;
