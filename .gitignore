@@ -16,3 +16,6 @@ data/prompt_libraries.json
 # 画布任务状态：落盘只为重启后仍能查到任务，属运行时数据
 data/canvas_tasks.json
 .venv/
+
+# 资产库索引是运行时数据，曾被部署包旧副本覆盖现网（2026-11-07），移出跟踪
+data/asset_library.json
