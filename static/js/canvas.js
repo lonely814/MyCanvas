@@ -1394,7 +1394,8 @@ function fitAllNodesViewport(){
     const pad = 180;
     const width = Math.max(1, maxX - minX + pad * 2);
     const height = Math.max(1, maxY - minY + pad * 2);
-    const nextScale = Math.max(0.06, Math.min(0.82, (rect.width - 80) / width, (rect.height - 80) / height));
+    // 下限与 ZOOM_SCALE_MIN 一致：否则缩放到适应后一刷新，视图会被钳回 0.15 而跳变
+    const nextScale = Math.max(ZOOM_SCALE_MIN, Math.min(0.82, (rect.width - 80) / width, (rect.height - 80) / height));
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
     viewport.scale = nextScale;
@@ -3541,6 +3542,28 @@ function closeLinkCreateMenu(){
     nodeOutputMenu.innerHTML = '';
     linkCreateState = null;
 }
+// 非生成器类节点（图片/提示词/循环/分组）的最小右键菜单。
+// 此前这些类型完全没有 contextmenu 处理，触屏长按也调不出任何菜单，
+// 导致手机上删不掉这类节点；这里只给「选中」与「删除」两个动作。
+function openPlainNodeMenu(nodeId, clientX, clientY){
+    const node = nodes.find(n => n.id === nodeId);
+    if(!node) return;
+    closeCreateMenu();
+    imageNodeMenu.innerHTML = `
+        <button class="menu-btn" data-plain-delete="${escapeAttr(nodeId)}"><i data-lucide="trash-2" class="w-4 h-4"></i><span>${escapeHtml(tr('common.delete') || '删除')}</span></button>
+    `;
+    imageNodeMenu.classList.add('open');
+    placeFloatingMenu(imageNodeMenu, clientX, clientY);
+    refreshIconsWithin(imageNodeMenu);
+    const delBtn = imageNodeMenu.querySelector('[data-plain-delete]');
+    if(delBtn){
+        delBtn.onclick = e => {
+            e.stopPropagation();
+            closeImageNodeMenu();
+            deleteNodeFromButton(nodeId, e);
+        };
+    }
+}
 function openImageNodeMenu(nodeId, clientX, clientY){
     const node = nodes.find(n => n.id === nodeId);
     if(!node || node.type !== 'image') return;
@@ -3552,9 +3575,19 @@ function openImageNodeMenu(nodeId, clientX, clientY){
         ${canPreview ? `<button class="menu-btn" data-image-preview="${escapeAttr(nodeId)}"><i data-lucide="eye" class="w-4 h-4"></i><span>预览</span></button>` : ''}
         ${canEdit ? `<button class="menu-btn" data-image-edit="${escapeAttr(nodeId)}"><i data-lucide="pencil" class="w-4 h-4"></i><span>编辑</span></button>` : ''}
         <button class="menu-btn" data-image-replace="${escapeAttr(nodeId)}"><i data-lucide="image-plus" class="w-4 h-4"></i><span>替换</span></button>
+        <button class="menu-btn" data-image-delete="${escapeAttr(nodeId)}"><i data-lucide="trash-2" class="w-4 h-4"></i><span>${escapeHtml(tr('common.delete') || '删除')}</span></button>
     `;
     imageNodeMenu.classList.add('open');
     placeFloatingMenu(imageNodeMenu, clientX, clientY);
+    const deleteBtn = imageNodeMenu.querySelector('[data-image-delete]');
+    if(deleteBtn){
+        // 触屏上图片节点只能靠这个菜单操作，缺删除就等于删不掉
+        deleteBtn.onclick = e => {
+            e.stopPropagation();
+            closeImageNodeMenu();
+            deleteNodeFromButton(nodeId, e);
+        };
+    }
     const previewBtn = imageNodeMenu.querySelector('[data-image-preview]');
     if(previewBtn){
         previewBtn.onclick = e => {
@@ -6757,11 +6790,14 @@ function renderNode(node){
         refreshSelectionVisuals();
     };
     el.oncontextmenu = e => {
-    if(!CANVAS_GENERATOR_TYPES.includes(node.type) && node.type !== 'output') return;
+        // 图片节点有自己的菜单（预览/编辑/替换），且不带删除——两者都补上通用项
         e.preventDefault();
         e.stopPropagation();
-        if(node.type === 'output') openOutputNodeMenu(node.id, e.clientX, e.clientY);
-        else openGeneratorNodeMenu(node.id, e.clientX, e.clientY);
+        if(node.type === 'output') { openOutputNodeMenu(node.id, e.clientX, e.clientY); return; }
+        if(CANVAS_GENERATOR_TYPES.includes(node.type)) { openGeneratorNodeMenu(node.id, e.clientX, e.clientY); return; }
+        // 其余类型（图片/提示词/分组/循环）此前没有任何菜单：触屏长按也弹不出来，
+        // 于是手机上无法删除这类节点。统一给一个最小菜单兜底。
+        openPlainNodeMenu(node.id, e.clientX, e.clientY);
     };
     const title = node.type === 'image' ? 'Image' : node.type === 'prompt' ? 'Prompt' : node.type === 'loop' ? tr('canvas.loopNode') : node.type === 'promptGroup' ? 'Prompts' : node.type === 'group' ? 'Group' : node.type === 'output' ? 'Output' : node.type === 'llm' ? 'LLM' : node.type === 'comfy' ? 'ComfyUI' : node.type === 'ltxDirector' ? tr('canvas.ltxDirector') : node.type === 'rh' ? 'RunningHub' : node.type === 'minimax' ? 'MiniMax H3' : node.type === 'midjourney' ? 'Midjourney' : node.type === 'msgen' ? tr('canvas.modelscopeGenerate') : node.type === 'video' ? tr('canvas.videoGenerateNode') : tr('canvas.apiGenerate');
     const displayTitle = node.type === 'image' && node.url ? nodeTitleForMedia(node) : title;
@@ -15866,7 +15902,9 @@ function startNodeDrag(e, node){
         [...selected].forEach(id => collect(nodes.find(n => n.id === id)));
     }
     const children = [...collected.values()];
-    dragNode = {node: dragTarget, children, sx:e.clientX, sy:e.clientY, ox:dragTarget.x, oy:dragTarget.y};
+    dragNode = {node: dragTarget, children, sx:e.clientX, sy:e.clientY, ox:dragTarget.x, oy:dragTarget.y,
+        // 拖拽前存一份快照，endDrag 里位移超过阈值才入撤销栈
+        snapshot: canvasSnapshot()};
     document.body.classList.add('canvas-node-drag');
     window.onmousemove = onNodeDrag;
     window.onmouseup = endDrag;
@@ -15907,7 +15945,9 @@ function startNodeResize(e, node){
         sx:e.clientX,
         sy:e.clientY,
         sw:(rect?.width ? rect.width / viewport.scale : node.w || defaultNodeSize(node.type).w),
-        sh:(rect?.height ? rect.height / viewport.scale : node.h || defaultNodeSize(node.type).h || 160)
+        sh:(rect?.height ? rect.height / viewport.scale : node.h || defaultNodeSize(node.type).h || 160),
+        ow:node.w, oh:node.h,
+        snapshot: canvasSnapshot()  // 缩放结束有变化才入撤销栈
     };
     document.body.classList.add('canvas-node-resize');
     window.onmousemove = onNodeResize;
@@ -16053,6 +16093,24 @@ function endDrag(event=null){
         // 拖动 group/promptGroup 自身时不重新评估（成员跟着一起走，包含关系不变）
         const draggedGroup = moved.some(n => n.type === 'group' || n.type === 'promptGroup');
         if(!draggedGroup) updateGroupMembership(moved);
+        // 有实际位移才入撤销栈：单纯点选不该产生一个空的撤销步
+        const dx = Math.abs(Number(dragNode.node.x) - Number(dragNode.ox));
+        const dy = Math.abs(Number(dragNode.node.y) - Number(dragNode.oy));
+        if((dx > 0.5 || dy > 0.5) && dragNode.snapshot){
+            undoStack.push(dragNode.snapshot);
+            if(undoStack.length > UNDO_MAX) undoStack.shift();
+            redoStack.length = 0;  // 新操作产生后原重做分支失效
+            refreshHistoryButtons();
+        }
+    }
+    if(resizeNode && resizeNode.snapshot){
+        // 尺寸真的变了才入栈（鼠标点一下手柄不动不算一次操作）
+        if(Number(resizeNode.node.w) !== Number(resizeNode.ow) || Number(resizeNode.node.h) !== Number(resizeNode.oh)){
+            undoStack.push(resizeNode.snapshot);
+            if(undoStack.length > UNDO_MAX) undoStack.shift();
+            redoStack.length = 0;
+            refreshHistoryButtons();
+        }
     }
     dragNode = null;
     dragBoard = null;

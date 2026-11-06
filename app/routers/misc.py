@@ -722,7 +722,9 @@ async def import_shared_folder_files(payload: SharedFolderImport):
 
 @router.get("/api/history")
 
-async def get_history_api(type: str = None):
+# 同步 def：history.json 实测已 2.4MB，json.load + 排序全在事件循环上会卡住
+# 其它请求（本地实测单次 80~110ms，且每个打开 zimage/online 页都会拉一遍）。
+def get_history_api(type: str = None):
 
     if os.path.exists(HISTORY_FILE):
 

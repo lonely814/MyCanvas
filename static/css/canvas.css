@@ -1752,3 +1752,195 @@ html[data-studio-scale="off"].studio-scale-managed .toolbar.scale-expanded .tool
 .shortcut-help dd { margin:0; color:var(--text); font-size:11px; font-weight:600; }
 .shortcut-help kbd { display:inline-block; min-width:18px; padding:1px 5px; border:1px solid var(--line-2); border-radius:5px; background:var(--card-solid); color:var(--muted); font-family:inherit; font-size:11px; font-weight:800; }
 /* ==== 批次4 结束 ==== */
+
+/* ==== 批次5：工作样张（workprint）====
+
+   设计立场：这是一张工作台，不是后台管理面板。
+   1. 图片节点不该被圆角框住——图铺到卡片边缘，元数据放在下方留白里，像照片说明。
+   2. 只有「正在运行」用彩色（琥珀），其余一切中性灰。现在蓝 accent 到处都是
+      （按钮、选中环、连线高亮），没有任何一个颜色代表「有东西在发生」。
+   3. 选中不用蓝色 ring，用加粗黑边 + 抬升——ring 是最没信息量的选中态。
+
+   全部追加覆盖，不改旧规则，便于整块回退。
+   性能：不用 backdrop-filter 之类的合成层操作，只改颜色/边框/圆角。 */
+
+/* 1) 中性化：类型色不再当装饰用，只在需要识别时以极低饱和出现 */
+.node { --node-accent:#94a3b8; }
+.node.image-node      { --node-accent:#7c93ab; }
+.node.prompt-node     { --node-accent:#8d84a8; }
+.node.loop-node       { --node-accent:#6f9a95; }
+.node.llm-node        { --node-accent:#7a83a8; }
+.node.generator-node  { --node-accent:#7b8ca8; }
+.node.video-node      { --node-accent:#a87b8e; }
+.node.minimax-node    { --node-accent:#6f8f99; }
+.node.rh-node         { --node-accent:#a89070; }
+.node.comfy-node      { --node-accent:#7f9a82; }
+.node.ltxDirector-node{ --node-accent:#a88080; }
+.node.midjourney-node { --node-accent:#96809e; }
+.node.msgen-node      { --node-accent:#70859e; }
+.node.output-node     { --node-accent:#8b8b8b; }
+.node.group-node,
+.node.promptGroup-node{ --node-accent:#7b7b7b; }
+
+/* 2) 卡片：直角 + 细黑边，纸片感。阴影极轻，靠边框建立边界而不是靠投影 */
+.node {
+    border-radius:4px;
+    border:1px solid rgba(17,24,39,.14);
+    background:#fff;
+    box-shadow:0 1px 0 rgba(17,24,39,.04);
+}
+.node:hover { border-color:rgba(17,24,39,.3); }
+/* 左侧类型条改到头部，避免和图片边缘打架 */
+.node::after { display:none; }
+
+/* 3) 头部：矮、无底色、细线。文字用正常字重 + 小字号，不做大字距大写 */
+.node-head {
+    height:28px; flex:0 0 28px;
+    padding:0 8px 0 10px;
+    border-bottom:1px solid rgba(17,24,39,.1);
+    border-radius:0;
+    background:transparent;
+    gap:6px;
+}
+.node-type-dot { width:5px; height:5px; border-radius:1px; background:var(--node-accent); opacity:.9; }
+.node-title {
+    font-size:11px; font-weight:600;
+    letter-spacing:0;
+    text-transform:none;
+    color:#4b5563;
+}
+/* 头部右侧操作按钮降到最低存在感，只在悬停浮现 */
+.node-head button { opacity:0; transition:opacity .12s var(--ease); }
+.node:hover .node-head button { opacity:.55; }
+.node-head button:hover { opacity:1; }
+
+/* 4) 选中：加粗黑边 + 轻微抬升，不用彩色 ring */
+.node.selected {
+    border-color:#111827;
+    box-shadow:0 6px 18px rgba(17,24,39,.13);
+}
+.node.selected .node-title { color:#111827; font-weight:700; }
+.node.dragging { opacity:.94; box-shadow:0 14px 34px rgba(17,24,39,.2); }
+
+/* 5) 内容区：内边距收窄，图片类节点直接铺边 */
+.node-body { padding:10px; }
+.node.image-node > .node-body,
+.node.output-node > .node-body { padding:0; }
+
+/* 6) 输出图：铺满、直角、细描边，图与图之间靠极窄间隙分隔。
+      去掉原来的 16px 圆角和 1px 浅灰框——图被框住显得像缩略图列表。 */
+.output-grid { gap:2px; }
+.output-img-wrap { max-width:none; border-radius:0; }
+.output-grid img,
+.output-grid video {
+    border-radius:0;
+    border:0;
+    background:#f3f4f6;
+}
+.output-img-wrap:hover img { border-color:transparent; box-shadow:inset 0 0 0 2px #111827; }
+/* 网格模式下给整张图区一条细描边，界定图像边界但不框住单张图 */
+.node.output-node .node-body { border-top:0; }
+
+/* 7) 失败/运行：只给运行态上色。琥珀是画布上唯一的彩色 */
+.node-run-status { border-radius:2px; font-weight:700; letter-spacing:0; text-transform:none; }
+.node-run-status.queued  { background:#f3f4f6; color:#6b7280; }
+.node-run-status.running { background:#fef3c7; color:#92400e; }
+.node-run-status.failed  { background:#fee2e2; color:#991b1b; }
+.node-run-status.running .dot { background:#d97706; }
+
+/* 8) 连线：更细、更中性。选中/悬停才变黑 */
+.link { stroke:#c7cdd6; stroke-width:1.5; opacity:1; }
+.link.link-active { stroke:#111827; stroke-width:2; }
+.link.link-hover { stroke:#111827; stroke-width:2; }
+.link.temp { stroke:#111827; stroke-width:1.5; stroke-dasharray:4 4; }
+/* 端点在悬停时不再染类型色，避免满屏彩色小点 */
+.node:hover .port::after { background:#6b7280; }
+.port:hover::after { transform:scale(1.35); background:#111827; }
+
+/* 9) 分组壳：虚线细框，比实线更明确「这不是节点」 */
+.node.group-node,
+.node.promptGroup-node {
+    background:rgba(249,250,251,.55);
+    border-style:dashed;
+    border-color:rgba(17,24,39,.18);
+    box-shadow:none;
+}
+.node.group-node > .node-head,
+.node.promptGroup-node > .node-head { border-bottom:0; }
+
+/* 10) 空画布引导：去掉图标底板，只留排版 */
+.canvas-empty-guide { gap:6px; }
+.canvas-empty-guide .ceg-icon { display:none; }
+.canvas-empty-guide .ceg-title { font-size:13px; font-weight:600; letter-spacing:0; opacity:.55; }
+.canvas-empty-guide .ceg-tips { font-size:12px; font-weight:400; line-height:1.75; opacity:.8; }
+
+/* 11) 深浅色：深色下把纸感换成「暗房」——近黑底 + 极细浅边 */
+html.studio-theme-dark body .shell #board .node {
+    background:#15171c !important;
+    border-color:rgba(255,255,255,.1) !important;
+    box-shadow:0 1px 0 rgba(0,0,0,.4) !important;
+    border-radius:4px !important;
+}
+html.studio-theme-dark body .shell #board .node:hover { border-color:rgba(255,255,255,.24) !important; }
+html.studio-theme-dark body .shell #board .node.selected {
+    border-color:rgba(255,255,255,.8) !important;
+    box-shadow:0 6px 22px rgba(0,0,0,.55) !important;
+}
+html.studio-theme-dark body .shell #board .node-title { color:#9aa3b2 !important; }
+html.studio-theme-dark body .shell #board .node.selected .node-title { color:#f3f4f6 !important; }
+html.studio-theme-dark body .shell #board .node-head { border-bottom-color:rgba(255,255,255,.08) !important; border-radius:0 !important; }
+html.studio-theme-dark body .shell #board .link { stroke:rgba(255,255,255,.2); }
+html.studio-theme-dark body .shell #board .link.link-active,
+html.studio-theme-dark body .shell #board .link.link-hover { stroke:rgba(255,255,255,.85); }
+html.studio-theme-dark body .shell #board .node-run-status.queued { background:rgba(255,255,255,.08); color:#9aa3b2; }
+html.studio-theme-dark body .shell #board .node-run-status.running { background:rgba(217,119,6,.2); color:#fbbf24; }
+html.studio-theme-dark body .shell #board .node-run-status.failed { background:rgba(220,38,38,.18); color:#fca5a5; }
+html.studio-theme-dark body .shell #board .output-grid img,
+html.studio-theme-dark body .shell #board .output-grid video { background:#0d0f13; }
+html.studio-theme-dark body .shell #board .node.group-node,
+html.studio-theme-dark body .shell #board .node.promptGroup-node { background:rgba(255,255,255,.02); border-color:rgba(255,255,255,.14); }
+
+html.theme-black body .shell #board .node {
+    background:#0f0f11 !important;
+    border-color:rgba(255,255,255,.12) !important;
+    border-radius:4px !important;
+    box-shadow:none !important;
+}
+html.theme-black body .shell #board .node.selected {
+    border-color:rgba(255,255,255,.82) !important;
+    box-shadow:0 6px 22px rgba(0,0,0,.7) !important;
+}
+html.theme-black body .shell #board .node-head { border-radius:0 !important; border-bottom-color:rgba(255,255,255,.08) !important; }
+html.theme-black body .shell #board .node-title { color:#8a8a8e !important; }
+html.theme-black body .shell #board .node.selected .node-title { color:#ededed !important; }
+html.theme-black body .shell #board .link { stroke:rgba(255,255,255,.18); }
+
+/* ==== 批次5 结束 ==== */
+
+/* ==== 触屏兜底：hover:none 设备上始终显示仅靠悬停显现的控件 ====
+   原来 .output-del / .resize-handle / .canvas-delete / .canvas-pin-btn /
+   .canvas-card-edit / .minimap-arrange-btn 全是 opacity:0 + :hover 显现，
+   触屏没有 hover 状态，这些按钮在手机上永远看不见，等于没有入口。 */
+@media (hover: none) {
+    .output-del,
+    .resize-handle,
+    .canvas-delete,
+    .canvas-pin-btn,
+    .canvas-card-edit,
+    .minimap-arrange-btn,
+    .link-delete,
+    .node-head button {
+        opacity: .62;
+        pointer-events: auto;
+    }
+    /* 触屏上说明性浮层不做悬停预览，直接常驻最小可见度 */
+    .node:hover .resize-handle,
+    .node.selected .resize-handle { opacity: 1; }
+    /* 触屏目标尺寸下限 32px，避免手指点不中 */
+    .output-del,
+    .link-delete,
+    .canvas-delete,
+    .canvas-pin-btn,
+    .canvas-card-edit { width: 32px; height: 32px; }
+    .resize-handle { width: 26px; height: 26px; }
+}

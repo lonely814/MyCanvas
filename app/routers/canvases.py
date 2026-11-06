@@ -101,7 +101,10 @@ router = APIRouter()
 
 @router.get("/api/canvases")
 
-async def canvases():
+# 同步 def：list_canvases 会遍历 data/canvases 下每个 JSON 全量解析（含回收站清理），
+# 声明成 async 时这段阻塞跑在事件循环上，画布多/文件大时会把其它请求一起卡住。
+# FastAPI 对同步 def 自动丢线程池，这里不需要 await 任何东西。
+def canvases():
 
     return {"canvases": list_canvases()}
 
@@ -297,7 +300,9 @@ async def update_canvas_meta(canvas_id: str, payload: CanvasMetaUpdate):
 
 @router.get("/api/canvases/{canvas_id}")
 
-async def get_canvas(canvas_id: str):
+# 同步 def：单个画布文件可达 866KB，json.load 与后续 record 构造都是阻塞 CPU/IO，
+# 跑在事件循环上会卡住同一时刻的其它请求（含生成中的轮询）。
+def get_canvas(canvas_id: str):
 
     return {"canvas": load_canvas(canvas_id)}
 
@@ -305,7 +310,9 @@ async def get_canvas(canvas_id: str):
 
 @router.post("/api/canvases/{canvas_id}/touch")
 
-async def touch_canvas(canvas_id: str):
+# 同步 def：打开画布时必调一次，整份画布读 + 整份写（最大 866KB），
+# 阻塞在事件循环上等于每次打开画布都让服务停顿一下。
+def touch_canvas(canvas_id: str):
 
     canvas = load_canvas(canvas_id)
 

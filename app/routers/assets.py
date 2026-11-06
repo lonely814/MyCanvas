@@ -329,7 +329,9 @@ async def import_local_assets_from_urls(payload: LocalAssetUrlImportRequest):
 
 @router.get("/api/local-assets")
 
-async def list_local_assets():
+# 同步 def：_local_upload_tree_and_items 内部是同步 os.walk + 逐张 PIL 读图，
+# 声明 async 会让整轮目录扫描跑在事件循环上；用同步 def 让 FastAPI 自动进线程池。
+def list_local_assets():
 
     tree, items = core._local_upload_tree_and_items()
 
@@ -819,7 +821,8 @@ async def list_canvas_assets():
 
 @router.post("/api/canvas-assets/check")
 
-async def check_canvas_assets(payload: CanvasAssetCheckRequest):
+# 同步 def：最多 3000 次本地文件存在性检查，纯阻塞调用，不该占事件循环。
+def check_canvas_assets(payload: CanvasAssetCheckRequest):
 
     result = {}
 
@@ -845,7 +848,10 @@ async def check_canvas_assets(payload: CanvasAssetCheckRequest):
 
 @router.post("/api/canvas-assets/download")
 
-async def download_canvas_assets(payload: CanvasAssetDownloadRequest):
+# 同步 def：函数体内全是阻塞操作——最多 1000 张图的 zf.write，远端图还要
+# fetch_remote_media_bytes（urllib，timeout 30s）整个读进内存。声明 async 时
+# 一次导出就足以让服务在几十秒内完全不响应其它请求；同步 def 会进线程池。
+def download_canvas_assets(payload: CanvasAssetDownloadRequest):
 
     buffer = BytesIO()
 
