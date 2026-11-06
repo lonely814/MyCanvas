@@ -754,7 +754,9 @@ async def canvas_video(payload: CanvasVideoRequest):
 
             text = exc.response.text
 
-            friendly = friendly_video_error_detail(text, requested_model, provider)
+            # friendly_video_error_detail 在全仓库不存在（曾在此处引用，必抛 NameError 盖掉真实错误），
+            # 复用既有的图片错误解析：模型/尺寸/限流/Key 这几类文案对视频同样适用
+            friendly = friendly_image_error_detail(text, "", requested_model)
 
             raise HTTPException(status_code=exc.response.status_code, detail=friendly or f"土豆视频接口错误：{text}") from exc
 

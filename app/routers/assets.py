@@ -86,6 +86,8 @@ from app.core import *
 
 import app.core as core
 
+# 注意：上面的 star import **不会**导入 core 里以下划线开头的函数。
+# 本文件调用任何 core._xxx 都必须写全 core. 前缀，否则一调用就是 NameError 500。
 router = APIRouter()
 
 
@@ -143,7 +145,7 @@ async def upload_local_assets(files: List[UploadFile] = File(...), folder: str =
 
             raise HTTPException(status_code=413, detail=f"{file.filename or '文件'} 超过 50MB，无法上传")
 
-        kind, ext = _local_upload_kind_ext(file.filename, file.content_type)
+        kind, ext = core._local_upload_kind_ext(file.filename, file.content_type)
 
         if kind is None:
 
@@ -173,7 +175,7 @@ async def upload_local_assets(files: List[UploadFile] = File(...), folder: str =
 
                 core._write_local_upload_classification(rel_name, classification)
 
-        uploaded.append(_local_upload_item(rel_name))
+        uploaded.append(core._local_upload_item(rel_name))
 
     return {"files": uploaded}
 
@@ -247,11 +249,11 @@ async def import_local_assets_from_urls(payload: LocalAssetUrlImportRequest):
 
                     name_path = urllib.parse.urlparse(src_url).path
 
-                kind, ext = _local_upload_kind_ext(name_path, content_type)
+                kind, ext = core._local_upload_kind_ext(name_path, content_type)
 
                 if kind == "image":
 
-                    real = _sniff_image_ext_bytes(content[:16])   # 以真实内容为准，避免 webp 被叫成 .png 等
+                    real = core._sniff_image_ext_bytes(content[:16])   # 以真实内容为准，避免 webp 被叫成 .png 等
 
                     if real and not (real == ".jpg" and ext == ".jpeg"):
 
@@ -305,7 +307,7 @@ async def import_local_assets_from_urls(payload: LocalAssetUrlImportRequest):
 
                         core._write_local_upload_classification(rel_name, classification)
 
-                item = _local_upload_item(rel_name)
+                item = core._local_upload_item(rel_name)
 
                 uploaded.append(item)
 
@@ -329,7 +331,7 @@ async def import_local_assets_from_urls(payload: LocalAssetUrlImportRequest):
 
 async def list_local_assets():
 
-    tree, items = _local_upload_tree_and_items()
+    tree, items = core._local_upload_tree_and_items()
 
     return {"items": items, "tree": tree}
 
@@ -359,7 +361,7 @@ async def create_local_asset_folder(payload: LocalAssetFolderRequest, request: R
 
     os.makedirs(abs_path, exist_ok=False)
 
-    tree, items = _local_upload_tree_and_items()
+    tree, items = core._local_upload_tree_and_items()
 
     return {"ok": True, "folder": {"path": rel, "name": name}, "tree": tree, "items": items}
 
@@ -395,7 +397,7 @@ async def rename_local_asset_folder(payload: LocalAssetFolderRequest, request: R
 
     os.rename(abs_path, new_abs)
 
-    tree, items = _local_upload_tree_and_items()
+    tree, items = core._local_upload_tree_and_items()
 
     return {"ok": True, "folder": {"path": new_rel, "name": name}, "tree": tree, "items": items}
 
@@ -407,19 +409,19 @@ async def rename_local_asset_item(payload: LocalAssetRenameRequest, request: Req
 
     ensure_same_origin_request(request)
 
-    rel, abs_path = _local_upload_safe_path(payload.path)
+    rel, abs_path = core._local_upload_safe_path(payload.path)
 
     if not os.path.isfile(abs_path):
 
         raise HTTPException(status_code=404, detail="本地素材不存在")
 
-    kind, ext = _local_upload_kind_ext(rel, "")
+    kind, ext = core._local_upload_kind_ext(rel, "")
 
     if kind is None:
 
         raise HTTPException(status_code=400, detail="不支持的素材类型")
 
-    new_stem = _local_upload_safe_file_stem(payload.name)
+    new_stem = core._local_upload_safe_file_stem(payload.name)
 
     old_ext = os.path.splitext(rel)[1] or ext
 
@@ -429,11 +431,11 @@ async def rename_local_asset_item(payload: LocalAssetRenameRequest, request: Req
 
     if new_rel == rel:
 
-        tree, items = _local_upload_tree_and_items()
+        tree, items = core._local_upload_tree_and_items()
 
-        return {"ok": True, "item": _local_upload_item(rel), "tree": tree, "items": items}
+        return {"ok": True, "item": core._local_upload_item(rel), "tree": tree, "items": items}
 
-    _, new_abs = _local_upload_abs(new_rel)
+    _, new_abs = core._local_upload_abs(new_rel)
 
     if os.path.exists(new_abs):
 
@@ -441,25 +443,25 @@ async def rename_local_asset_item(payload: LocalAssetRenameRequest, request: Req
 
     os.rename(abs_path, new_abs)
 
-    old_caption = _local_upload_caption_path(rel)
+    old_caption = core._local_upload_caption_path(rel)
 
-    new_caption = _local_upload_caption_path(new_rel)
+    new_caption = core._local_upload_caption_path(new_rel)
 
     if os.path.isfile(old_caption) and not os.path.exists(new_caption):
 
         os.rename(old_caption, new_caption)
 
-    old_classification = _local_upload_classification_path(rel)
+    old_classification = core._local_upload_classification_path(rel)
 
-    new_classification = _local_upload_classification_path(new_rel)
+    new_classification = core._local_upload_classification_path(new_rel)
 
     if os.path.isfile(old_classification) and not os.path.exists(new_classification):
 
         os.rename(old_classification, new_classification)
 
-    tree, items = _local_upload_tree_and_items()
+    tree, items = core._local_upload_tree_and_items()
 
-    return {"ok": True, "item": _local_upload_item(new_rel), "old_path": rel, "tree": tree, "items": items}
+    return {"ok": True, "item": core._local_upload_item(new_rel), "old_path": rel, "tree": tree, "items": items}
 
 
 
@@ -481,7 +483,7 @@ async def delete_local_assets(payload: dict, request: Request):
 
         try:
 
-            rel, path = _local_upload_safe_path(name)
+            rel, path = core._local_upload_safe_path(name)
 
         except HTTPException:
 
@@ -493,13 +495,13 @@ async def delete_local_assets(payload: dict, request: Request):
 
                 os.remove(path)
 
-                txt_path = _local_upload_caption_path(rel)
+                txt_path = core._local_upload_caption_path(rel)
 
                 if os.path.isfile(txt_path):
 
                     os.remove(txt_path)
 
-                cls_path = _local_upload_classification_path(rel)
+                cls_path = core._local_upload_classification_path(rel)
 
                 if os.path.isfile(cls_path):
 
@@ -543,7 +545,7 @@ async def move_local_assets(payload: dict, request: Request):
 
         try:
 
-            rel, abs_path = _local_upload_safe_path(name)
+            rel, abs_path = core._local_upload_safe_path(name)
 
         except HTTPException:
 
@@ -561,7 +563,7 @@ async def move_local_assets(payload: dict, request: Request):
 
             continue  # 已在目标文件夹，跳过
 
-        _, new_abs = _local_upload_abs(new_rel)
+        _, new_abs = core._local_upload_abs(new_rel)
 
         if os.path.exists(new_abs):
 
@@ -573,7 +575,7 @@ async def move_local_assets(payload: dict, request: Request):
 
             new_rel = f"{target_rel}/{base}".lstrip("/") if target_rel else base
 
-            _, new_abs = _local_upload_abs(new_rel)
+            _, new_abs = core._local_upload_abs(new_rel)
 
         try:
 
@@ -583,9 +585,9 @@ async def move_local_assets(payload: dict, request: Request):
 
             for src_sib, dst_sib in (
 
-                (_local_upload_caption_path(rel), _local_upload_caption_path(new_rel)),
+                (core._local_upload_caption_path(rel), core._local_upload_caption_path(new_rel)),
 
-                (_local_upload_classification_path(rel), _local_upload_classification_path(new_rel)),
+                (core._local_upload_classification_path(rel), core._local_upload_classification_path(new_rel)),
 
             ):
 
@@ -599,7 +601,7 @@ async def move_local_assets(payload: dict, request: Request):
 
             continue
 
-    tree, items = _local_upload_tree_and_items()
+    tree, items = core._local_upload_tree_and_items()
 
     return {"ok": True, "moved": moved, "items": items, "tree": tree}
 
@@ -621,13 +623,13 @@ async def caption_local_assets(payload: LocalAssetCaptionRequest):
 
         try:
 
-            filename, path = _local_upload_safe_path(name)
+            filename, path = core._local_upload_safe_path(name)
 
             if not os.path.isfile(path):
 
                 raise HTTPException(status_code=404, detail="文件不存在")
 
-            kind, _ = _local_upload_kind_ext(filename, "")
+            kind, _ = core._local_upload_kind_ext(filename, "")
 
             if kind != "image":
 
@@ -647,7 +649,7 @@ async def caption_local_assets(payload: LocalAssetCaptionRequest):
 
             )
 
-            txt_path = _local_upload_caption_path(filename)
+            txt_path = core._local_upload_caption_path(filename)
 
             with open(txt_path, "w", encoding="utf-8", newline="") as f:
 
@@ -697,13 +699,13 @@ async def classify_local_assets(payload: LocalAssetClassifyRequest):
 
         try:
 
-            filename, path = _local_upload_safe_path(name)
+            filename, path = core._local_upload_safe_path(name)
 
             if not os.path.isfile(path):
 
                 raise HTTPException(status_code=404, detail="文件不存在")
 
-            kind, _ = _local_upload_kind_ext(filename, "")
+            kind, _ = core._local_upload_kind_ext(filename, "")
 
             if kind != "image":
 
@@ -733,7 +735,7 @@ async def classify_local_assets(payload: LocalAssetClassifyRequest):
 
                 "classification": classification,
 
-                "classification_file": os.path.basename(_local_upload_classification_path(filename)),
+                "classification_file": os.path.basename(core._local_upload_classification_path(filename)),
 
                 "model": classification.get("model") or "",
 
@@ -759,13 +761,13 @@ async def classify_local_assets(payload: LocalAssetClassifyRequest):
 
 async def save_local_asset_caption(payload: LocalAssetCaptionSaveRequest):
 
-    filename, path = _local_upload_safe_path(payload.name)
+    filename, path = core._local_upload_safe_path(payload.name)
 
     if not os.path.isfile(path):
 
         raise HTTPException(status_code=404, detail="文件不存在")
 
-    kind, _ = _local_upload_kind_ext(filename, "")
+    kind, _ = core._local_upload_kind_ext(filename, "")
 
     if kind != "image":
 
@@ -773,7 +775,7 @@ async def save_local_asset_caption(payload: LocalAssetCaptionSaveRequest):
 
     caption = str(payload.caption or "")[:100000]
 
-    txt_path = _local_upload_caption_path(filename)
+    txt_path = core._local_upload_caption_path(filename)
 
     with open(txt_path, "w", encoding="utf-8", newline="") as f:
 

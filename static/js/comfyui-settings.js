@@ -148,6 +148,10 @@ const miniCanvasHost = document.getElementById('miniCanvasHost');
 function setStatus(text){ statusEl.textContent = text || ''; }
 function escapeHtml(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function escapeAttr(s){ return escapeHtml(s); }
+// 内联 onclick/oninput 里传 JS 字符串字面量：先用 JSON.stringify 处理引号与反斜杠，
+// 再用 escapeHtml 保证 HTML 属性值不被截断。直接用 escapeAttr 不行——它把 ' 转成
+// &#39;，而 HTML 属性在解析时会实体解码，值又变回 '，能逃出 JS 字符串执行。
+function jsArg(value){ return escapeHtml(JSON.stringify(String(value == null ? '' : value))); }
 function fieldKind(f){
     if(['image','video','audio'].includes(f.type)) return f.type;
     const key = `${f.input || ''} ${f.name || ''}`.toLowerCase();
@@ -276,7 +280,7 @@ window.addEventListener('pageshow', () => {
 
 function renderList(){
     listEl.innerHTML = workflows.map(w => `
-        <button class="workflow-card ${w.name===selectedName?'active':''}" type="button" onclick="selectWorkflow('${escapeHtml(w.name)}')">
+        <button class="workflow-card ${w.name===selectedName?'active':''}" type="button" onclick="selectWorkflow(${jsArg(w.name)})">
             <span class="workflow-icon"><i data-lucide="${w.builtin?'package':'file-json-2'}" class="w-3.5 h-3.5"></i></span>
             <span class="min-w-0" style="flex:1">
                 <div class="workflow-name">${escapeHtml(w.title)}</div>
@@ -582,7 +586,7 @@ function renderGraph(){
         const truncLabel = label.length > 12 ? label.slice(0,12) + '…' : label;
         const truncSub = sub.length > 16 ? sub.slice(0,16) + '…' : sub;
         return `
-            <g class="gnode cat-${cat} ${exposedClass}" data-node-id="${escapeAttr(id)}" transform="translate(${pos.x},${pos.y})" onclick="openNodePopup('${escapeAttr(id)}', this)">
+            <g class="gnode cat-${cat} ${exposedClass}" data-node-id="${escapeAttr(id)}" transform="translate(${pos.x},${pos.y})" onclick="openNodePopup(${jsArg(id)}, this)">
                 <rect width="${NODE_W}" height="${NODE_H}" rx="8"></rect>
                 <text class="gn-icon" x="10" y="20" font-size="14">${icon}</text>
                 <text class="gn-title" x="28" y="20">${escapeHtml(truncLabel)}</text>
@@ -783,7 +787,7 @@ function renderInputRow(nodeId, inputKey, rawValue){
     const showOriginal = friendlyName !== inputKey;
     return `
         <div class="input-row ${active?'is-active':''} ${showExtras?'has-extras':''}">
-            <div class="check-toggle ${active?'checked':''}" onclick="toggleField('${escapeAttr(nodeId)}','${escapeAttr(inputKey)}')">
+            <div class="check-toggle ${active?'checked':''}" onclick="toggleField(${jsArg(nodeId)},${jsArg(inputKey)})">
                 ${active ? '<i data-lucide="check" class="w-3 h-3"></i>' : ''}
             </div>
             <div class="input-info">
@@ -804,35 +808,35 @@ function renderExtras(f){
     // 媒体字段：槽位顺序 + 是否必填。画布上有多个上游图片时，按 image_order 升序依次分配，
     // 没有这个设置就只能靠字段在列表里的顺序，改顺序要删了重建。
     if(['image','video','audio'].includes(kind)){
-        const fid = escapeAttr(f.id);
+        const fid = String(f.id ?? '');
         return `<div class="extras-row">
-            <div class="extra-pair">${tr('comfy.slotOrder')}<input class="small-input" type="number" min="0" step="1" value="${f.image_order ?? 0}" oninput="updateField('${fid}','image_order',this.value===''?0:parseInt(this.value,10)||0)"></div>
-            <label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.required === true ? 'checked' : ''} onchange="updateField('${fid}','required',this.checked)">${tr('comfy.fieldRequired')}</label>
+            <div class="extra-pair">${tr('comfy.slotOrder')}<input class="small-input" type="number" min="0" step="1" value="${f.image_order ?? 0}" oninput="updateField(${jsArg(fid)},'image_order',this.value===''?0:parseInt(this.value,10)||0)"></div>
+            <label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.required === true ? 'checked' : ''} onchange="updateField(${jsArg(fid)},'required',this.checked)">${tr('comfy.fieldRequired')}</label>
         </div>`;
     }
     // 提示词字段：可选择是否跟随上游提示词（默认跟随）
     if(kind === 'prompt'){
-        const fid = escapeAttr(f.id);
+        const fid = String(f.id ?? '');
         const follows = f.source_from_upstream !== false;
         return `<div class="extras-row">
-            <label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${follows ? 'checked' : ''} onchange="updateField('${fid}','source_from_upstream',this.checked)">${tr('comfy.followUpstreamPrompt')}</label>
+            <label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${follows ? 'checked' : ''} onchange="updateField(${jsArg(fid)},'source_from_upstream',this.checked)">${tr('comfy.followUpstreamPrompt')}</label>
         </div>`;
     }
     if(f.type === 'slider' || f.type === 'number'){
         const randomToggle = f.type === 'number'
-            ? `<label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.random_enabled === true ? 'checked' : ''} onchange="updateField('${f.id}','random_enabled',this.checked)">随机数</label>`
+            ? `<label class="random-toggle" onclick="event.stopPropagation()"><input type="checkbox" ${f.random_enabled === true ? 'checked' : ''} onchange="updateField(${jsArg(f.id)},'random_enabled',this.checked)">随机数</label>`
             : '';
         return `<div class="extras-row">
-            <div class="extra-pair">min<input class="small-input" type="number" value="${f.min ?? ''}" oninput="updateField('${f.id}','min',this.value===''?null:parseFloat(this.value))"></div>
-            <div class="extra-pair">max<input class="small-input" type="number" value="${f.max ?? ''}" oninput="updateField('${f.id}','max',this.value===''?null:parseFloat(this.value))"></div>
-            <div class="extra-pair">step<input class="small-input" type="number" value="${f.step ?? ''}" oninput="updateField('${f.id}','step',this.value===''?null:parseFloat(this.value))"></div>
-            <div class="extra-pair">${tr('comfy.defaultValue')}<input class="small-input" type="number" value="${f.default ?? ''}" oninput="updateField('${f.id}','default',this.value===''?null:parseFloat(this.value))"></div>
+            <div class="extra-pair">min<input class="small-input" type="number" value="${f.min ?? ''}" oninput="updateField(${jsArg(f.id)},'min',this.value===''?null:parseFloat(this.value))"></div>
+            <div class="extra-pair">max<input class="small-input" type="number" value="${f.max ?? ''}" oninput="updateField(${jsArg(f.id)},'max',this.value===''?null:parseFloat(this.value))"></div>
+            <div class="extra-pair">step<input class="small-input" type="number" value="${f.step ?? ''}" oninput="updateField(${jsArg(f.id)},'step',this.value===''?null:parseFloat(this.value))"></div>
+            <div class="extra-pair">${tr('comfy.defaultValue')}<input class="small-input" type="number" value="${f.default ?? ''}" oninput="updateField(${jsArg(f.id)},'default',this.value===''?null:parseFloat(this.value))"></div>
             ${randomToggle}
         </div>`;
     }
     if(f.type === 'dropdown'){
         const opts = f.options || [];
-        const fid = escapeAttr(f.id);
+        const fid = String(f.id ?? '');
         const rows = opts.map((o, i) => {
             const looksNumber = String(o).trim() !== '' && !isNaN(Number(o));
             const tag = looksNumber
@@ -843,9 +847,9 @@ function renderExtras(f){
                     <span class="opt-index">${i + 1}</span>
                     <input class="small-input" type="text" placeholder="选项 ${i + 1}" value="${escapeAttr(o)}"
                         onmousedown="event.stopPropagation()" onclick="event.stopPropagation()"
-                        oninput="updateDropdownOption('${fid}', ${i}, this.value, this)">
+                        oninput="updateDropdownOption(${jsArg(fid)}, ${i}, this.value, this)">
                     ${tag}
-                    <button class="opt-del" type="button" onclick="event.stopPropagation();removeDropdownOption('${fid}', ${i})" title="删除"><i data-lucide="x" class="w-3 h-3"></i></button>
+                    <button class="opt-del" type="button" onclick="event.stopPropagation();removeDropdownOption(${jsArg(fid)}, ${i})" title="删除"><i data-lucide="x" class="w-3 h-3"></i></button>
                 </div>
             `;
         }).join('');
@@ -854,7 +858,7 @@ function renderExtras(f){
                 下拉选项 <span style="color:var(--faint)">· 数字形式自动作为数值传给 ComfyUI</span>
             </div>
             ${rows}
-            <button class="ghost-btn" type="button" onclick="event.stopPropagation();addDropdownOption('${fid}')" style="height:34px;padding:0 16px;font-size:12px;font-weight:800;align-self:flex-start;gap:6px"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span>添加选项</span></button>
+            <button class="ghost-btn" type="button" onclick="event.stopPropagation();addDropdownOption(${jsArg(fid)})" style="height:34px;padding:0 16px;font-size:12px;font-weight:800;align-self:flex-start;gap:6px"><i data-lucide="plus" class="w-3.5 h-3.5"></i><span>添加选项</span></button>
         </div>`;
     }
     return '';
@@ -924,7 +928,7 @@ function randomButtonHtml(f){
     if(!fieldSupportsRandom(f)) return '';
     const active = isPreviewRandomActive(f.id);
     const title = active ? '随机已开启，点击关闭' : '随机已关闭，点击开启';
-    return `<button class="random-btn ${active ? 'active' : ''}" type="button" onclick="togglePreviewRandom('${f.id}')" title="${title}"><i data-lucide="dice-5" class="w-4 h-4"></i></button>`;
+    return `<button class="random-btn ${active ? 'active' : ''}" type="button" onclick="togglePreviewRandom(${jsArg(f.id)})" title="${title}"><i data-lucide="dice-5" class="w-4 h-4"></i></button>`;
 }
 
 function togglePreviewRandom(fieldId){
@@ -970,7 +974,7 @@ function renderPreview(){
     }
     const fieldsHtml = fields.map(f => renderPreviewField(f)).join('');
     const resultHtml = runResult
-        ? `<div class="run-result"><img src="${escapeAttr(runResult)}" onclick="openImagePreview('${escapeAttr(runResult)}')"><div class="run-status">${tr('comfy.runSuccess')}</div></div>`
+        ? `<div class="run-result"><img src="${escapeAttr(runResult)}" onclick="openImagePreview(${jsArg(runResult)})"><div class="run-status">${tr('comfy.runSuccess')}</div></div>`
         : '';
     const runButton = `<button id="runBtn" class="run-btn" type="button" onclick="onRun()">
             <i data-lucide="play" class="w-4 h-4"></i><span>${tr('comfy.runTest')}</span>
@@ -987,38 +991,38 @@ function renderPreviewField(f){
     const label = `<div class="pfield-label">${escapeHtml(f.name || f.input)}</div>`;
     const v = previewValues[f.id] ?? f.default ?? (f.type==='boolean'?false:(f.type==='number'||f.type==='slider'?0:''));
     if(f.type === 'textarea'){
-        return `<div class="pfield">${label}<textarea class="pfield-textarea" oninput="setPreviewValue('${f.id}',this.value)">${escapeHtml(v)}</textarea></div>`;
+        return `<div class="pfield">${label}<textarea class="pfield-textarea" oninput="setPreviewValue(${jsArg(f.id)},this.value)">${escapeHtml(v)}</textarea></div>`;
     }
     if(f.type === 'number'){
         const randomBtn = randomButtonHtml(f);
-        return `<div class="pfield">${label}<div class="pfield-random-row" style="${randomBtn ? '' : 'grid-template-columns:1fr'}"><input class="pfield-input" type="number" value="${escapeAttr(v)}" oninput="setPreviewValue('${f.id}',parseFloat(this.value)||0)">${randomBtn}</div></div>`;
+        return `<div class="pfield">${label}<div class="pfield-random-row" style="${randomBtn ? '' : 'grid-template-columns:1fr'}"><input class="pfield-input" type="number" value="${escapeAttr(v)}" oninput="setPreviewValue(${jsArg(f.id)},parseFloat(this.value)||0)">${randomBtn}</div></div>`;
     }
     if(f.type === 'slider'){
         const min = f.min ?? 0, max = f.max ?? 10, step = f.step ?? 1;
         return `<div class="pfield">${label}<div class="pfield-random-row" style="grid-template-columns:1fr"><div class="pfield-slider">
-            <input type="range" min="${min}" max="${max}" step="${step}" value="${escapeAttr(v)}" oninput="setPreviewValue('${f.id}',parseFloat(this.value))">
+            <input type="range" min="${min}" max="${max}" step="${step}" value="${escapeAttr(v)}" oninput="setPreviewValue(${jsArg(f.id)},parseFloat(this.value))">
             <span class="pfield-slider-val" data-slider-val="${f.id}">${v}</span>
         </div></div></div>`;
     }
     if(f.type === 'dropdown'){
         const opts = (f.options || []).map(o => `<option value="${escapeAttr(o)}" ${String(v)===String(o)?'selected':''}>${escapeHtml(o)}</option>`).join('');
-        return `<div class="pfield">${label}<select class="pfield-select" onchange="setPreviewValue('${f.id}',this.value)">${opts || `<option value="">${tr('comfy.noOptions')}</option>`}</select></div>`;
+        return `<div class="pfield">${label}<select class="pfield-select" onchange="setPreviewValue(${jsArg(f.id)},this.value)">${opts || `<option value="">${tr('comfy.noOptions')}</option>`}</select></div>`;
     }
     if(isMediaField(f)){
         // 浏览器显示用本地 blob URL；如果没有就尝试用 /output/ 之类的可访问 URL；都没有显示占位文字
         const displayUrl = previewImageUrls[f.id] || (typeof v === 'string' && /^(\/|https?:|blob:|data:)/.test(v) ? v : '');
-        return `<div class="pfield">${label}<div class="pfield-image-drop ${displayUrl?'has-image':''}" onclick="pickImage('${f.id}')">
+        return `<div class="pfield">${label}<div class="pfield-image-drop ${displayUrl?'has-image':''}" onclick="pickImage(${jsArg(f.id)})">
             ${mediaPreviewHtml(fieldKind(f), displayUrl, v)}
         </div></div>`;
     }
     if(f.type === 'boolean'){
         return `<div class="pfield">${label}<div class="pfield-bool">
-            <div class="pfield-bool-track ${v?'on':''}" onclick="setPreviewValue('${f.id}',!${!!v});this.classList.toggle('on')">
+            <div class="pfield-bool-track ${v?'on':''}" onclick="setPreviewValue(${jsArg(f.id)},!${!!v});this.classList.toggle('on')">
                 <div class="pfield-bool-thumb"></div>
             </div>
         </div></div>`;
     }
-    return `<div class="pfield">${label}<input class="pfield-input" type="text" value="${escapeAttr(v)}" oninput="setPreviewValue('${f.id}',this.value)"></div>`;
+    return `<div class="pfield">${label}<input class="pfield-input" type="text" value="${escapeAttr(v)}" oninput="setPreviewValue(${jsArg(f.id)},this.value)"></div>`;
 }
 
 function miniCardStyle(key){
@@ -1069,7 +1073,7 @@ function renderMiniCanvasPreview(target = previewCard, large = false){
     const comfy = miniTestNodes.find(n => n.type === 'comfy') || defaultMiniTestNodes().find(n => n.type === 'comfy');
     const output = miniTestNodes.find(n => n.type === 'output') || defaultMiniTestNodes().find(n => n.type === 'output');
     const resultHtml = runResult
-        ? `<div class="mini-result"><img src="${escapeAttr(runResult)}" onclick="openImagePreview('${escapeAttr(runResult)}')"><div class="run-status">${tr('comfy.runSuccess')}</div></div>`
+        ? `<div class="mini-result"><img src="${escapeAttr(runResult)}" onclick="openImagePreview(${jsArg(runResult)})"><div class="run-status">${tr('comfy.runSuccess')}</div></div>`
         : `<div class="preview-empty" style="padding:18px 10px">${tr('comfy.resultHere')}</div>`;
     target.style.display = 'block';
     target.innerHTML = `
@@ -1087,13 +1091,13 @@ function renderMiniCanvasPreview(target = previewCard, large = false){
                     <div class="mini-card" data-node="${n.id}" style="left:${n.x}px;top:${n.y}px">
                         <span class="mini-port out"></span>
                         <div class="mini-card-head"><i data-lucide="text-cursor-input" class="w-3.5 h-3.5"></i><span class="mini-node-title">${tr('comfy.promptNode')} ${i+1}</span>${miniDeleteButton(n)}</div>
-                        <div class="mini-card-body"><textarea class="mini-textarea" oninput="updateMiniNode('${n.id}','text',this.value)" placeholder="${escapeAttr(tr('comfy.promptPlaceholder'))}">${escapeHtml(n.text || '')}</textarea></div>
+                        <div class="mini-card-body"><textarea class="mini-textarea" oninput="updateMiniNode(${jsArg(n.id)},'text',this.value)" placeholder="${escapeAttr(tr('comfy.promptPlaceholder'))}">${escapeHtml(n.text || '')}</textarea></div>
                     </div>`).join('')}
                 ${mediaNodes.map((n,i) => `
                     <div class="mini-card" data-node="${n.id}" style="left:${n.x}px;top:${n.y}px">
                         <span class="mini-port out"></span>
                         <div class="mini-card-head"><i data-lucide="${n.type === 'video' ? 'file-video' : n.type === 'audio' ? 'file-audio' : 'image'}" class="w-3.5 h-3.5"></i><span class="mini-node-title">${typeLabel(n.type)} ${i+1}</span>${miniDeleteButton(n)}</div>
-                        <div class="mini-card-body"><div class="mini-image-drop" onclick="pickMiniImage('${escapeAttr(n.id)}')">${mediaPreviewHtml(n.type, n.url, n.name || n.value, true)}</div></div>
+                        <div class="mini-card-body"><div class="mini-image-drop" onclick="pickMiniImage(${jsArg(n.id)})">${mediaPreviewHtml(n.type, n.url, n.name || n.value, true)}</div></div>
                     </div>`).join('')}
                 <div class="mini-card comfy-card" data-node="${comfy.id}" style="left:${comfy.x}px;top:${comfy.y}px">
                     <span class="mini-port in"></span><span class="mini-port out"></span>
@@ -1128,34 +1132,34 @@ function renderMiniField(f){
     const v = previewValues[f.id] ?? f.default ?? (f.type==='boolean'?false:(f.type==='number'||f.type==='slider'?0:''));
     if(isMediaField(f)){
         const displayUrl = previewImageUrls[f.id] || (typeof v === 'string' && /^(\/|https?:|blob:|data:)/.test(v) ? v : '');
-        return `<div class="pfield">${label}<div class="mini-image-drop" onclick="pickImage('${f.id}')">${mediaPreviewHtml(fieldKind(f), displayUrl, v, true)}</div></div>`;
+        return `<div class="pfield">${label}<div class="mini-image-drop" onclick="pickImage(${jsArg(f.id)})">${mediaPreviewHtml(fieldKind(f), displayUrl, v, true)}</div></div>`;
     }
     if(f.type === 'textarea'){
-        return `<div class="pfield">${label}<textarea class="mini-textarea" oninput="setPreviewValue('${f.id}',this.value)">${escapeHtml(v)}</textarea></div>`;
+        return `<div class="pfield">${label}<textarea class="mini-textarea" oninput="setPreviewValue(${jsArg(f.id)},this.value)">${escapeHtml(v)}</textarea></div>`;
     }
     if(f.type === 'number'){
         const randomBtn = randomButtonHtml(f);
-        return `<div class="pfield">${label}<div class="pfield-random-row" style="${randomBtn ? '' : 'grid-template-columns:1fr'}"><input class="mini-input" type="number" value="${escapeAttr(v)}" oninput="setPreviewValue('${f.id}',parseFloat(this.value)||0)">${randomBtn}</div></div>`;
+        return `<div class="pfield">${label}<div class="pfield-random-row" style="${randomBtn ? '' : 'grid-template-columns:1fr'}"><input class="mini-input" type="number" value="${escapeAttr(v)}" oninput="setPreviewValue(${jsArg(f.id)},parseFloat(this.value)||0)">${randomBtn}</div></div>`;
     }
     if(f.type === 'slider'){
         const min = f.min ?? 0, max = f.max ?? 10, step = f.step ?? 1;
         return `<div class="pfield">${label}<div class="pfield-random-row" style="grid-template-columns:1fr"><div class="pfield-slider">
-            <input type="range" min="${min}" max="${max}" step="${step}" value="${escapeAttr(v)}" oninput="setPreviewValue('${f.id}',parseFloat(this.value))">
+            <input type="range" min="${min}" max="${max}" step="${step}" value="${escapeAttr(v)}" oninput="setPreviewValue(${jsArg(f.id)},parseFloat(this.value))">
             <span class="pfield-slider-val" data-slider-val="${f.id}">${v}</span>
         </div></div></div>`;
     }
     if(f.type === 'dropdown'){
         const opts = (f.options || []).map(o => `<option value="${escapeAttr(o)}" ${String(v)===String(o)?'selected':''}>${escapeHtml(o)}</option>`).join('');
-        return `<div class="pfield">${label}<select class="pfield-select" onchange="setPreviewValue('${f.id}',this.value)">${opts || `<option value="">${tr('comfy.noOptions')}</option>`}</select></div>`;
+        return `<div class="pfield">${label}<select class="pfield-select" onchange="setPreviewValue(${jsArg(f.id)},this.value)">${opts || `<option value="">${tr('comfy.noOptions')}</option>`}</select></div>`;
     }
     if(f.type === 'boolean'){
-        return `<div class="pfield">${label}<div class="pfield-bool"><div class="pfield-bool-track ${v?'on':''}" onclick="setPreviewValue('${f.id}',!${!!v});this.classList.toggle('on')"><div class="pfield-bool-thumb"></div></div></div></div>`;
+        return `<div class="pfield">${label}<div class="pfield-bool"><div class="pfield-bool-track ${v?'on':''}" onclick="setPreviewValue(${jsArg(f.id)},!${!!v});this.classList.toggle('on')"><div class="pfield-bool-thumb"></div></div></div></div>`;
     }
-    return `<div class="pfield">${label}<input class="mini-input" type="text" value="${escapeAttr(v)}" oninput="setPreviewValue('${f.id}',this.value)"></div>`;
+    return `<div class="pfield">${label}<input class="mini-input" type="text" value="${escapeAttr(v)}" oninput="setPreviewValue(${jsArg(f.id)},this.value)"></div>`;
 }
 
 function miniDeleteButton(node){
-    return ['prompt','image'].includes(node.type) ? `<button class="mini-delete" type="button" onclick="removeMiniNode('${node.id}')" title="${escapeAttr(tr('common.delete'))}"><i data-lucide="x" class="w-3 h-3"></i></button>` : '';
+    return ['prompt','image'].includes(node.type) ? `<button class="mini-delete" type="button" onclick="removeMiniNode(${jsArg(node.id)})" title="${escapeAttr(tr('common.delete'))}"><i data-lucide="x" class="w-3 h-3"></i></button>` : '';
 }
 
 function miniLineBetween(a, b){

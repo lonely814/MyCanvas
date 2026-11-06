@@ -1569,6 +1569,11 @@ async function flushCanvasSaveOnLeave(){
     }
 }
 async function saveCanvas(){
+    // 本次保存已开始，防抖定时器到此消费完毕。不置空的话 applyRemoteCanvasData 的
+    // "本地有未保存改动" 判断会永久为真（它把 saveTimer 非空当成有待保存），
+    // 多标签页的远端改动就再也应用不上。
+    clearTimeout(saveTimer);
+    saveTimer = null;
     if(!canvas || applyingRemoteCanvas) return;
     if(savingCanvasNow){
         saveCanvasAgain = true;
@@ -2371,6 +2376,7 @@ async function returnToCanvasManager(){
     clearTimeout(saveTimer);
     if(canvas && localCanvasDirty) await saveCanvas();
     stopCanvasRemotePolling();
+    destroyAllLTXEditors();  // 下方 nodes 直接清空，不先销毁会漏掉编辑器的 window 监听与 rAF
     canvas = null;
     nodes = [];
     connections = [];
@@ -2417,6 +2423,8 @@ async function deleteCanvas(id, event){
         pendingDeleteCanvasId = null;
         canvases = canvases.filter(item => item.id !== id);
         if(deletingCurrent){
+            stopCanvasRemotePolling();
+            destroyAllLTXEditors();  // 同 returnToCanvasManager：清空 nodes 前先销毁编辑器
             canvas = null;
             nodes = [];
             connections = [];
@@ -6482,7 +6490,15 @@ function measureCanvasOriginalImageNodes(root=nodesEl){
 // 语言/主题/供应商配置变化会改变节点外观但不体现在节点数据上，用 RENDER_EPOCH 强制整体重建。
 let RENDER_EPOCH = 0;
 function nodeRenderSignature(node){
-    return RENDER_EPOCH + '|' + JSON.stringify(node);
+    // _ltxEditor 反向持有 node（ltx-director-timeline.js 里 this.node = node），
+    // 不剔除就是循环引用：stringify 抛 TypeError，而这里在 render() 的 try 外，
+    // 整次渲染会中断——后续节点不渲染、它们的连线画到 (0,0)。
+    // 兜底：万一还有别的循环引用，退回“每次重建”（正确性优先，只损失 DOM 复用）。
+    try {
+        return RENDER_EPOCH + '|' + JSON.stringify(node, (key, value) => (key === '_ltxEditor' ? undefined : value));
+    } catch(e) {
+        return RENDER_EPOCH + '|!circular|' + Math.random();
+    }
 }
 function forceFullRender(){
     RENDER_EPOCH++;
@@ -6756,7 +6772,7 @@ function renderNode(node){
         const label = { queued:'排队中', running:'运行中', done:'完成', failed:'失败' }[node.runStatus] || '';
         return `<span class="node-run-status ${node.runStatus}"><span class="dot"></span>${escapeHtml(label)}${node._cascadeIdx?' '+node._cascadeIdx:''}</span>`;
     })() : '';
-    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton('${escapeAttr(node.id)}', event)" class="node-muted hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
+    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton(${jsArg(node.id)}, event)" class="node-muted hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>`;
     const body = document.createElement('div');
     body.className = 'node-body';
     if(node.type === 'image') {
@@ -13937,7 +13953,8 @@ function outputMetaFor(url, out){
     return item && typeof item === 'object' ? item : {};
 }
 function runSnapshot(node, prompt, refs=[]){
-    const clone = JSON.parse(JSON.stringify(node || {}));
+    // 同 nodeRenderSignature：node._ltxEditor 反向持有 node，直接 stringify 会抛循环引用
+    const clone = JSON.parse(JSON.stringify(node || {}, (key, value) => (key === '_ltxEditor' ? undefined : value)));
     delete clone.running;
     delete clone.runStatus;
     delete clone.runError;
@@ -16890,6 +16907,10 @@ function hasImageDropData(dataTransfer){
 function hasOutputImageDrag(dataTransfer){ return [...(dataTransfer?.types || [])].includes('application/x-canvas-output-image'); }
 function escapeHtml(str){ return String(str == null ? '' : str).replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
 function escapeAttr(str){ return escapeHtml(str); }
+// 内联 onclick/oninput 里传 JS 字符串字面量：先用 JSON.stringify 处理引号与反斜杠，
+// 再用 escapeHtml 保证 HTML 属性值不被截断。直接用 escapeAttr 不行——它把 ' 转成
+// &#39;，而 HTML 属性在解析时会实体解码，值又变回 '，能逃出 JS 字符串执行。
+function jsArg(value){ return escapeHtml(JSON.stringify(String(value == null ? '' : value))); }
 
 window.onload = async () => {
     renderToolbarNodeButtons();  // 工具栏节点按钮由 NODE_TYPES 生成（与右键菜单同源）

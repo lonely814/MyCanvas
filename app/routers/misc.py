@@ -997,9 +997,8 @@ def upload_workflow(payload: WorkflowUploadRequest):
 
     path = workflow_path_from_name(stored_name)
 
-    with open(path, "w", encoding="utf-8") as f:
-
-        json.dump(payload.workflow, f, ensure_ascii=False, indent=2)
+    # 原子写：写一半崩溃会留下截断 JSON，之后 /api/workflows 列表与运行都解析失败
+    write_json_atomic(path, payload.workflow, indent=2)
 
     return {"name": stored_name}
 
@@ -1021,9 +1020,7 @@ def save_workflow_config(name: str, payload: WorkflowConfig):
 
     cfg_path = workflow_config_path(name)
 
-    with open(cfg_path, "w", encoding="utf-8") as f:
-
-        json.dump(payload.dict(), f, ensure_ascii=False, indent=2)
+    write_json_atomic(cfg_path, payload.dict(), indent=2)
 
     return {"config": payload.dict()}
 
@@ -1062,6 +1059,9 @@ def delete_workflow(name: str):
 @router.post("/api/workflows/{name:path}/run")
 
 def run_workflow(name: str, payload: WorkflowRunRequest):
+
+    # generate() 定义在 generation.py，本模块没有；局部导入避免循环加载（同 core.py:11420）
+    from app.routers.generation import generate
 
     if not WORKFLOW_NAME_RE.match(name):
 

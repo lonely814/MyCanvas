@@ -1340,7 +1340,7 @@ function renderRhPreviewControl(field){
         const media = previewState.url
             ? renderRhPreviewMedia(previewState.url, kind, previewState.name || value)
             : `<i data-lucide="${icon}" class="w-5 h-5"></i><span>点击上传</span>`;
-        return `<div class="rh-preview-field"><div class="rh-preview-label">${label}${slot}</div><button class="rh-preview-media ${previewState.url ? 'has-media' : ''}" type="button" onclick="pickRhPreviewMedia('${escapeAttr(key)}','${kind}')">${media}</button></div>`;
+        return `<div class="rh-preview-field"><div class="rh-preview-label">${label}${slot}</div><button class="rh-preview-media ${previewState.url ? 'has-media' : ''}" type="button" onclick="pickRhPreviewMedia(${jsArg(key)},${jsArg(kind)})">${media}</button></div>`;
     }
     if(kind === 'BOOLEAN'){
         const on = String(value).toLowerCase() === 'true';
@@ -1351,16 +1351,16 @@ function renderRhPreviewControl(field){
         const max = Number.isFinite(Number(field.max)) && Number(field.max) > min ? Number(field.max) : 1;
         const step = Number.isFinite(Number(field.step)) && Number(field.step) > 0 ? Number(field.step) : 0.01;
         const numericValue = Number.isFinite(Number(value)) ? Number(value) : min;
-        return `<div class="rh-preview-field"><div class="rh-preview-label"><span>${label}</span><span class="rh-preview-slider-val">${escapeHtml(numericValue)}</span></div><input class="rh-preview-slider" type="range" min="${escapeAttr(min)}" max="${escapeAttr(max)}" step="${escapeAttr(step)}" value="${escapeAttr(numericValue)}" oninput="updateRhPreviewValue('${escapeAttr(key)}', this.value); const val=this.closest('.rh-preview-field')?.querySelector('.rh-preview-slider-val'); if(val) val.textContent=this.value;"></div>`;
+        return `<div class="rh-preview-field"><div class="rh-preview-label"><span>${label}</span><span class="rh-preview-slider-val">${escapeHtml(numericValue)}</span></div><input class="rh-preview-slider" type="range" min="${escapeAttr(min)}" max="${escapeAttr(max)}" step="${escapeAttr(step)}" value="${escapeAttr(numericValue)}" oninput="updateRhPreviewValue(${jsArg(key)}, this.value); const val=this.closest('.rh-preview-field')?.querySelector('.rh-preview-slider-val'); if(val) val.textContent=this.value;"></div>`;
     }
     if(options.length || kind === 'SELECT'){
         return `<div class="rh-preview-field"><div class="rh-preview-label">${label}</div><select disabled>${(options.length ? options : [value || '选项']).map(option => `<option>${escapeHtml(option)}</option>`).join('')}</select></div>`;
     }
     const randomButton = kind === 'NUMBER' && field.random_enabled
-        ? `<button class="random-btn rh-preview-random-btn ${randomActive ? 'active' : ''}" type="button" onclick="toggleRhPreviewRandom('${escapeAttr(key)}')" title="${randomActive ? '使用随机数' : '使用固定数'}"><i data-lucide="dice-5" class="w-4 h-4"></i></button>`
+        ? `<button class="random-btn rh-preview-random-btn ${randomActive ? 'active' : ''}" type="button" onclick="toggleRhPreviewRandom(${jsArg(key)})" title="${randomActive ? '使用随机数' : '使用固定数'}"><i data-lucide="dice-5" class="w-4 h-4"></i></button>`
         : '';
     const readonly = randomActive ? 'disabled' : '';
-    return `<div class="rh-preview-field"><div class="rh-preview-label">${label}</div><div class="rh-preview-random-row" style="${randomButton ? '' : 'grid-template-columns:1fr'}"><input ${readonly} type="${kind === 'NUMBER' ? 'number' : 'text'}" value="${escapeAttr(value)}" placeholder="${kind === 'NUMBER' && randomActive ? '随机数' : ''}" oninput="updateRhPreviewValue('${escapeAttr(key)}', this.value)">${randomButton}</div></div>`;
+    return `<div class="rh-preview-field"><div class="rh-preview-label">${label}</div><div class="rh-preview-random-row" style="${randomButton ? '' : 'grid-template-columns:1fr'}"><input ${readonly} type="${kind === 'NUMBER' ? 'number' : 'text'}" value="${escapeAttr(value)}" placeholder="${kind === 'NUMBER' && randomActive ? '随机数' : ''}" oninput="updateRhPreviewValue(${jsArg(key)}, this.value)">${randomButton}</div></div>`;
 }
 function renderRhPreviewMedia(url, kind, name=''){
     const safe = escapeAttr(url || '');
@@ -1608,7 +1608,7 @@ function renderRhWorkflowEditorNodeList(){
         const enabledCount = group.items.filter(field => field.enabled === true).length;
         return `
             <div class="rh-editor-node ${expanded ? 'expanded' : ''} ${String(group.field.nodeId) === rhWorkflowEditorState.activeNodeId ? 'is-focused' : ''}" data-node-id="${escapeAttr(group.field.nodeId)}">
-                <button class="rh-editor-node-head" type="button" onclick="toggleRhWorkflowEditorGroup('${escapeAttr(safeGroup)}')">
+                <button class="rh-editor-node-head" type="button" onclick="toggleRhWorkflowEditorGroup(${jsArg(safeGroup)})">
                     <span>
                         <strong>${escapeHtml(group.field.group || `Node #${group.field.nodeId}`)}</strong>
                         <small>#${escapeHtml(group.field.nodeId)} · ${enabledCount}/${group.items.length}</small>
@@ -1631,36 +1631,36 @@ function renderRhWorkflowEditorField(field){
     const keepOriginal = field.sourceFromUpstream === false;
     const imageSlotControls = rhEditorMode === 'workflow' && type === 'IMAGE' ? `
         <div class="rh-image-slot-row">
-            <label><span>排序</span><input type="number" min="1" step="1" value="${escapeAttr(field.imageOrder || '')}" oninput="updateRhWorkflowEditorField('${escapeAttr(key)}','imageOrder',this.value)"></label>
-            <button class="rh-editor-required ${field.required === true ? 'active' : ''}" type="button" onclick="updateRhWorkflowEditorField('${escapeAttr(key)}','required',${field.required === true ? 'false' : 'true'})">
+            <label><span>排序</span><input type="number" min="1" step="1" value="${escapeAttr(field.imageOrder || '')}" oninput="updateRhWorkflowEditorField(${jsArg(key)},'imageOrder',this.value)"></label>
+            <button class="rh-editor-required ${field.required === true ? 'active' : ''}" type="button" onclick="updateRhWorkflowEditorField(${jsArg(key)},'required',${field.required === true ? 'false' : 'true'})">
                 <span class="check-dot"></span>${field.required === true ? '必选' : '可选'}
             </button>
         </div>
     ` : '';
     return `
         <div class="rh-editor-field-row ${checked ? 'active' : ''}">
-            <button class="rh-editor-check ${checked ? 'checked' : ''}" type="button" onclick="toggleRhWorkflowEditorField('${escapeAttr(key)}')">${checked ? '<i data-lucide="check" class="w-3 h-3"></i>' : ''}</button>
+            <button class="rh-editor-check ${checked ? 'checked' : ''}" type="button" onclick="toggleRhWorkflowEditorField(${jsArg(key)})">${checked ? '<i data-lucide="check" class="w-3 h-3"></i>' : ''}</button>
             <div class="rh-editor-field-main">
                 <div class="rh-editor-field-name">${escapeHtml(field.label || field.fieldName)}</div>
                 <div class="rh-editor-field-meta">${escapeHtml(field.fieldName)} · ${escapeHtml(type)}</div>
-                <button class="rh-editor-keep ${keepOriginal ? 'active' : ''}" type="button" onclick="updateRhWorkflowEditorField('${escapeAttr(key)}','sourceFromUpstream',${keepOriginal ? 'true' : 'false'})">
+                <button class="rh-editor-keep ${keepOriginal ? 'active' : ''}" type="button" onclick="updateRhWorkflowEditorField(${jsArg(key)},'sourceFromUpstream',${keepOriginal ? 'true' : 'false'})">
                     <span class="check-dot"></span>${keepOriginal ? '保留工作流原设置' : '暴露并覆盖参数'}
                 </button>
                 <div class="rh-editor-field-controls">
-                    <input type="text" value="${escapeAttr(field.label || '')}" placeholder="显示名称" oninput="updateRhWorkflowEditorField('${escapeAttr(key)}','label',this.value)">
-                    <select onchange="updateRhWorkflowEditorField('${escapeAttr(key)}','fieldType',this.value)">
+                    <input type="text" value="${escapeAttr(field.label || '')}" placeholder="显示名称" oninput="updateRhWorkflowEditorField(${jsArg(key)},'label',this.value)">
+                    <select onchange="updateRhWorkflowEditorField(${jsArg(key)},'fieldType',this.value)">
                         ${['TEXT','NUMBER','SLIDER','BOOLEAN','SELECT','IMAGE','VIDEO','AUDIO'].map(option => `<option value="${option}" ${String(field.fieldType || type).toUpperCase() === option ? 'selected' : ''}>${rhWorkflowFieldTypeLabel(option)}</option>`).join('')}
                     </select>
                 </div>
                 ${imageSlotControls}
                 <div class="rh-editor-field-controls rh-editor-wide-controls">
-                    <textarea placeholder="下拉选项：每行一个，例如 1024x1024" oninput="updateRhWorkflowEditorField('${escapeAttr(key)}','options',this.value)">${escapeHtml(optionsText)}</textarea>
+                    <textarea placeholder="下拉选项：每行一个，例如 1024x1024" oninput="updateRhWorkflowEditorField(${jsArg(key)},'options',this.value)">${escapeHtml(optionsText)}</textarea>
                 </div>
                 <div class="rh-editor-random-row">
-                    <button class="rh-editor-random ${randomOn ? 'active' : ''}" type="button" onclick="updateRhWorkflowEditorField('${escapeAttr(key)}','random_enabled',${randomOn ? 'false' : 'true'})"><i data-lucide="dice-5" class="w-3.5 h-3.5"></i><span>随机数</span></button>
-                    <input type="number" value="${escapeAttr(field.min ?? '')}" placeholder="最小" oninput="updateRhWorkflowEditorField('${escapeAttr(key)}','min',this.value)">
-                    <input type="number" value="${escapeAttr(field.max ?? '')}" placeholder="最大" oninput="updateRhWorkflowEditorField('${escapeAttr(key)}','max',this.value)">
-                    <input type="number" value="${escapeAttr(field.step ?? '')}" placeholder="步长" oninput="updateRhWorkflowEditorField('${escapeAttr(key)}','step',this.value)">
+                    <button class="rh-editor-random ${randomOn ? 'active' : ''}" type="button" onclick="updateRhWorkflowEditorField(${jsArg(key)},'random_enabled',${randomOn ? 'false' : 'true'})"><i data-lucide="dice-5" class="w-3.5 h-3.5"></i><span>随机数</span></button>
+                    <input type="number" value="${escapeAttr(field.min ?? '')}" placeholder="最小" oninput="updateRhWorkflowEditorField(${jsArg(key)},'min',this.value)">
+                    <input type="number" value="${escapeAttr(field.max ?? '')}" placeholder="最大" oninput="updateRhWorkflowEditorField(${jsArg(key)},'max',this.value)">
+                    <input type="number" value="${escapeAttr(field.step ?? '')}" placeholder="步长" oninput="updateRhWorkflowEditorField(${jsArg(key)},'step',this.value)">
                 </div>
             </div>
         </div>
@@ -1699,8 +1699,8 @@ function renderRhAppFieldCard(field){
     const key = rhWorkflowFieldKey(field);
     const checked = field.enabled === true;
     return `
-        <div class="rh-app-field-card ${checked ? 'active' : ''}" data-field-key="${escapeAttr(key)}" onclick="openRhAppFieldPopover('${escapeAttr(key)}', this)">
-            <button class="rh-editor-check ${checked ? 'checked' : ''}" type="button" onclick="event.stopPropagation();toggleRhWorkflowEditorField('${escapeAttr(key)}')">${checked ? '<i data-lucide="check" class="w-3 h-3"></i>' : ''}</button>
+        <div class="rh-app-field-card ${checked ? 'active' : ''}" data-field-key="${escapeAttr(key)}" onclick="openRhAppFieldPopover(${jsArg(key)}, this)">
+            <button class="rh-editor-check ${checked ? 'checked' : ''}" type="button" onclick="event.stopPropagation();toggleRhWorkflowEditorField(${jsArg(key)})">${checked ? '<i data-lucide="check" class="w-3 h-3"></i>' : ''}</button>
             <div>
                 <strong>${escapeHtml(field.label || field.fieldName)}</strong>
                 <span>${escapeHtml(field.fieldName)} · ${escapeHtml(rhWorkflowFieldKind(field))}</span>
@@ -1812,7 +1812,7 @@ function renderRhWorkflowEditorGraph(){
         const cat = workflowNodeCategory(node);
         const count = (config.fields || []).filter(field => field.enabled === true && String(field.nodeId) === String(id)).length;
         return `
-            <g class="rh-editor-gnode cat-${cat} ${activeNodes.has(String(id)) ? 'has-exposed' : ''} ${String(id) === rhWorkflowEditorState.activeNodeId ? 'is-active' : ''}" data-node-id="${escapeAttr(id)}" transform="translate(${pos.x},${pos.y})" onclick="openRhWorkflowNodePopover('${escapeAttr(id)}', this)">
+            <g class="rh-editor-gnode cat-${cat} ${activeNodes.has(String(id)) ? 'has-exposed' : ''} ${String(id) === rhWorkflowEditorState.activeNodeId ? 'is-active' : ''}" data-node-id="${escapeAttr(id)}" transform="translate(${pos.x},${pos.y})" onclick="openRhWorkflowNodePopover(${jsArg(id)}, this)">
                 <rect width="${NODE_W}" height="${NODE_H}" rx="8"></rect>
                 <text class="rh-editor-gtitle" x="10" y="20">${escapeHtml(title.length > 15 ? title.slice(0, 15) + '...' : title)}</text>
                 <text class="rh-editor-gsub" x="10" y="36">${escapeHtml(klass.length > 18 ? klass.slice(0, 18) + '...' : klass)}</text>
@@ -1939,7 +1939,7 @@ function renderRhEntryThumbnail(kind, entry){
     const src = thumbnail || candidates[0] || '';
     if(!src) return `<i data-lucide="${icon}" class="w-5 h-5"></i>`;
     const fallbacks = thumbnail ? candidates : candidates.slice(1);
-    return `<img src="${escapeAttr(src)}" alt="" data-rh-thumb-fallbacks="${escapeAttr(fallbacks.join('|'))}" onerror="fallbackRhEntryThumbnail(this,'${icon}')">`;
+    return `<img src="${escapeAttr(src)}" alt="" data-rh-thumb-fallbacks="${escapeAttr(fallbacks.join('|'))}" onerror="fallbackRhEntryThumbnail(this,${jsArg(icon)})">`;
 }
 function fallbackRhEntryThumbnail(img, icon){
     const fallbacks = String(img?.dataset?.rhThumbFallbacks || '').split('|').filter(Boolean);
@@ -1963,22 +1963,22 @@ function renderRhEntryList(target, list, kind){
     }
     target.innerHTML = list.map((entry, index) => `
         <div class="rh-config-card">
-            <button class="rh-thumb" type="button" onclick="pickRhThumbnail('${kind}', ${entry._rhIndex ?? index})" title="上传缩略图">
+            <button class="rh-thumb" type="button" onclick="pickRhThumbnail(${jsArg(kind)}, ${entry._rhIndex ?? index})" title="上传缩略图">
                 ${renderRhEntryThumbnail(kind, entry)}
             </button>
             <div class="rh-card-main">
                 <label class="rh-card-title-field">
                     <span>名称</span>
-                    <input type="text" value="${escapeAttr(entry.title || '')}" oninput="updateRhEntry('${kind}', ${entry._rhIndex ?? index}, 'title', this.value)" placeholder="${kind === 'app' ? 'AI 应用名称' : '工作流名称'}">
+                    <input type="text" value="${escapeAttr(entry.title || '')}" oninput="updateRhEntry(${jsArg(kind)}, ${entry._rhIndex ?? index}, 'title', this.value)" placeholder="${kind === 'app' ? 'AI 应用名称' : '工作流名称'}">
                 </label>
                 <div class="rh-id-line"><i data-lucide="hash" class="w-3 h-3"></i><span>${escapeHtml(kind === 'app' ? `/run/ai-app/${entry.id}` : `/run/workflow/${entry.id}`)}</span></div>
-                <textarea oninput="updateRhEntry('${kind}', ${entry._rhIndex ?? index}, 'note', this.value)" placeholder="备注、用途、参数说明">${escapeHtml(entry.note || '')}</textarea>
+                <textarea oninput="updateRhEntry(${jsArg(kind)}, ${entry._rhIndex ?? index}, 'note', this.value)" placeholder="备注、用途、参数说明">${escapeHtml(entry.note || '')}</textarea>
             </div>
             <div class="rh-card-actions">
                 ${kind === 'workflow'
                     ? `<button class="rh-card-action" type="button" onclick="openRhWorkflowEditor(${entry._rhIndex ?? index})" title="编辑工作流"><i data-lucide="settings-2" class="w-3.5 h-3.5"></i></button>`
                     : `<button class="rh-card-action" type="button" onclick="openRhAppEditor(${entry._rhIndex ?? index})" title="编辑应用参数"><i data-lucide="settings-2" class="w-3.5 h-3.5"></i></button>`}
-                <button class="rh-card-action danger" type="button" onclick="removeRhEntry('${kind}', ${entry._rhIndex ?? index})" title="删除"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
+                <button class="rh-card-action danger" type="button" onclick="removeRhEntry(${jsArg(kind)}, ${entry._rhIndex ?? index})" title="删除"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button>
             </div>
         </div>
     `).join('');
@@ -1997,7 +1997,9 @@ function sortedProviders(){
 function providerDragAttrs(item){
     if(isFixedProvider(item)) return '';
     const id = escapeAttr(item.id);
-    return ` draggable="true" data-provider-id="${id}" ondragstart="handleProviderDragStart(event,'${id}')" ondragover="handleProviderDragOver(event,'${id}')" ondrop="handleProviderDrop(event,'${id}')" ondragend="handleProviderDragEnd()"`;
+    // id 上面已 HTML 转义（供属性值用），jsArg 要原始值，传转义串会二次转义
+    const rawId = String(item.id ?? '');
+    return ` draggable="true" data-provider-id="${id}" ondragstart="handleProviderDragStart(event,${jsArg(rawId)})" ondragover="handleProviderDragOver(event,${jsArg(rawId)})" ondrop="handleProviderDrop(event,${jsArg(rawId)})" ondragend="handleProviderDragEnd()"`;
 }
 function renderProviderList(){
     providerList.innerHTML = sortedProviders().map(item => {
@@ -2007,7 +2009,7 @@ function renderProviderList(){
         const protocolLabel = item.id === 'runninghub' ? 'RH' : String(item.protocol || 'openai').toUpperCase();
         if(item.id === 'modelscope'){
             return `
-                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider(${jsArg(item.id)})">
                     <span class="provider-banner-inner">
                         <span class="provider-logo-wrap">
                             <img src="/static/images/modelscope.gif" alt="ModelScope" class="ms-icon-light">
@@ -2021,7 +2023,7 @@ function renderProviderList(){
         }
         if(item.id === 'runninghub'){
             return `
-                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider(${jsArg(item.id)})">
                     <span class="provider-banner-inner">
                         <span class="provider-logo-wrap">
                             <img src="/static/images/RunningHub-B.png" alt="RunningHub" class="runninghub-icon ms-icon-light">
@@ -2035,7 +2037,7 @@ function renderProviderList(){
         }
         if(item.id === 'volcengine'){
             return `
-                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')">
+                <button class="provider-card provider-card-banner ${active} ${stateClass}" type="button" onclick="selectProvider(${jsArg(item.id)})">
                     <span class="provider-banner-inner">
                         <span class="provider-logo-wrap">
                             <img src="/static/images/volcengine-theme-light.svg" alt="火山引擎" class="volcengine-icon ms-icon-light">
@@ -2048,7 +2050,7 @@ function renderProviderList(){
             `;
         }
         return `
-            <button class="provider-card provider-card-sortable ${active} ${stateClass}" type="button" onclick="selectProvider('${escapeHtml(item.id)}')"${providerDragAttrs(item)}>
+            <button class="provider-card provider-card-sortable ${active} ${stateClass}" type="button" onclick="selectProvider(${jsArg(item.id)})"${providerDragAttrs(item)}>
                 <span class="provider-drag-handle" aria-hidden="true"><i data-lucide="grip-vertical" class="w-3.5 h-3.5"></i></span>
                 <span class="provider-mark"><i data-lucide="${item.has_key ? 'key-round' : 'key'}" class="w-4 h-4"></i></span>
                 <span class="provider-info">
@@ -3038,7 +3040,7 @@ function modelProtocolSelectHtml(kind, index, model, item){
     const map = (item.model_protocols && typeof item.model_protocols === 'object') ? item.model_protocols : {};
     const current = String(map[String(model || '').trim()] || '').toLowerCase();
     const opt = (val, label) => `<option value="${val}" ${current === val ? 'selected' : ''}>${label}</option>`;
-    return `<select class="model-protocol-select" title="该模型使用的协议，默认跟随平台全局协议" onchange="updateModelProtocol('${kind}', ${index}, this.value)">
+    return `<select class="model-protocol-select" title="该模型使用的协议，默认跟随平台全局协议" onchange="updateModelProtocol(${jsArg(kind)}, ${index}, this.value)">
         <option value="" ${current === '' ? 'selected' : ''}>默认</option>
         ${opt('openai', 'OpenAI')}
         ${opt('gemini', 'Gemini')}
@@ -3060,10 +3062,10 @@ function renderModels(kind){
             <div class="model-row${showProtocol ? ' has-protocol' : ''}">
                 <div class="model-id-field">
                     ${label && label !== model ? `<div class="model-display-name">${escapeHtml(label)}</div>` : ''}
-                    <input value="${escapeAttr(model)}" oninput="updateModel('${kind}', ${index}, this.value)">
+                    <input value="${escapeAttr(model)}" oninput="updateModel(${jsArg(kind)}, ${index}, this.value)">
                 </div>
                 ${modelProtocolSelectHtml(kind, index, model, item)}
-                <button class="icon-btn" type="button" onclick="removeModel('${kind}', ${index})" title="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                <button class="icon-btn" type="button" onclick="removeModel(${jsArg(kind)}, ${index})" title="删除"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
             </div>
         `;
     }).join('');
@@ -3462,6 +3464,10 @@ function escapeHtml(str){
     return String(str || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 }
 function escapeAttr(str){ return escapeHtml(str).replace(/`/g, '&#96;'); }
+// 内联 onclick/oninput 里传 JS 字符串字面量：先用 JSON.stringify 处理引号与反斜杠，
+// 再用 escapeHtml 保证 HTML 属性值不被截断。直接用 escapeAttr 不行——它把 ' 转成
+// &#39;，而 HTML 属性在解析时会实体解码，值又变回 '，能逃出 JS 字符串执行。
+function jsArg(value){ return escapeHtml(JSON.stringify(String(value == null ? '' : value))); }
 window.addEventListener('message', event => {
     if(event.data?.type === 'studio-theme' && window.StudioTheme) window.StudioTheme.set(event.data.theme);
     if(event.data?.type === 'studio-lang' && window.StudioI18n) {

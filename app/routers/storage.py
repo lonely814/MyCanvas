@@ -117,7 +117,10 @@ async def update_storage_settings(payload: Dict[str, str]):
 
 @router.get("/api/storage-files")
 
-async def list_storage_files(kind: str = "generated", offset: int = 0, limit: int = 80):
+def list_storage_files(kind: str = "generated", offset: int = 0, limit: int = 80):
+
+    # 同步 def：函数体内全是 os.walk + 逐图 Image.open，声明成 async 会占住事件循环。
+    # 同步 def 由 FastAPI 自动丢线程池执行。
 
     root = storage_kind_dir(kind)
 
@@ -259,7 +262,12 @@ async def upload_image(files: List[UploadFile] = File(...)):
 
                 files_data = {'image': (file.filename, content, file.content_type)}
 
-                response = requests.post(f"http://{addr}/upload/image", files=files_data, timeout=5)
+                # requests 是同步阻塞的，直接 await 前调用会占住事件循环（每后端 5s）
+                response = await asyncio.to_thread(
+
+                    requests.post, f"http://{addr}/upload/image", files=files_data, timeout=5
+
+                )
 
                 if response.status_code == 200:
 

@@ -4,6 +4,40 @@
 
 版本号取自仓库根目录 `VERSION` 文件，同时用作静态资源缓存版本（`?v=`）。
 
+## 2026.11.06
+
+### 修复
+
+- 本地素材库整块不可用：上传、列表、建夹、重命名、删除、移动、反推、分类、保存
+  描述共 13 个接口一调用就 500。根因是 `from app.core import *` 不导入下划线开头
+  的函数，而这批调用（`_local_upload_kind_ext` 等 9 个）漏写了 `core.` 前缀。
+  上一批只修了同类里的 `_local_upload_safe_folder` 一族，这次补齐其余 40 处。
+- 三个 CLI 协议的「测试连接」必 500：`codex_status` / `gemini_cli_status` /
+  `jimeng_status` 定义在 `cli.py`，`providers.py` 从未导入。
+- `POST /api/workflows/{名称}/run` 必 500：`generate()` 定义在 `generation.py`，
+  `misc.py` 从未导入。
+- 土豆视频接口报错时抛 NameError 而不是原错误：`friendly_video_error_detail`
+  在全仓库根本没有定义，改用既有的 `friendly_image_error_detail` 解析。
+- LTX 导演节点建过时间线编辑器后，下一次重绘整次中断：节点上的 `_ltxEditor`
+  反向持有节点自身，渲染签名 `JSON.stringify(node)` 遇到循环引用抛错。现在签名
+  序列化时剔除该字段并加兜底，同类问题在「运行快照」处一并修掉。
+- 多标签页同时编辑同一画布时，另一个窗口的改动再也同步不过来：自动保存的防抖
+  定时器句柄触发后没有清空，被「本地有未保存改动」的判断永久当成仍有待保存。
+- 关闭页面时的兜底保存会清空该画布的全部生成日志：为绕开 keepalive 64KB 上限
+  而省略的 `logs`/`settings` 被后端当作空值写回。现在后端只在请求真的带了这两个
+  字段时才覆盖。
+- 返回画布列表、删除当前画布时不销毁 LTX 时间线编辑器，泄漏 window 级监听与
+  常驻帧循环（换画布的四条路径此前已修，这两条漏了）。
+- 内联事件里的字符串参数可被注入：`onclick="fn('${escapeAttr(x)}')"` 中
+  `escapeAttr` 把单引号转成 `&#39;`，HTML 属性解码后还原成单引号，能逃出 JS
+  字符串执行。画布节点 id、ComfyUI 输出文件名、RunningHub 工作流节点/字段名等
+  60 处统一改为「JSON.stringify + HTML 转义」。同一写法里用 `escapeHtml` 的
+  6 处也一并处理。
+- 工作流 JSON 与工作流配置改为原子写（与全库其余 JSON 一致），写一半崩溃不再
+  留下无法解析的截断文件。
+- 素材库文件列表接口、ComfyUI 上传转发改为在线程池执行：两者此前在 async 接口
+  里跑同步磁盘遍历与阻塞 HTTP，请求一慢会把整个服务的并发一起拖住。
+
 ## 2026.10.03
 
 ### 安全

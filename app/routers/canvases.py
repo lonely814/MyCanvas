@@ -531,9 +531,13 @@ async def update_canvas(canvas_id: str, payload: CanvasSaveRequest):
 
     canvas["viewport"] = canvas.get("viewport") or {"x": 0, "y": 0, "scale": 1}
 
-    canvas["logs"] = payload.logs[-500:]
-
-    canvas["settings"] = payload.settings or {}
+    # logs/settings 只在请求真的带了时才覆盖：关页兜底的 keepalive 请求为了不超 64KB
+    # 会省略这两个字段，而模型默认值是 [] / {}，无条件覆盖等于把整份生成日志清空。
+    # 用 model_fields_set 区分"没传"和"传了个空值"。
+    if "logs" in payload.model_fields_set:
+        canvas["logs"] = payload.logs[-500:]
+    if "settings" in payload.model_fields_set:
+        canvas["settings"] = payload.settings or {}
 
     save_canvas(canvas)
 

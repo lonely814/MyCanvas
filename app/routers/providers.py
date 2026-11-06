@@ -233,6 +233,9 @@ async def test_provider_connection(payload: TestConnectionPayload):
 
     """测试请求地址是否可用：调上游 /v1/models。验证通过时同时把模型清单按类别返回，避免再调一次拉取接口。"""
 
+    # CLI 协议的状态函数定义在 cli.py，本模块没导入；局部导入避免改变模块加载顺序（同 core.py:10842）
+    from app.routers.cli import codex_status, gemini_cli_status, jimeng_status
+
     protocol = protocol_from_payload(payload)
 
     if protocol == "codex":
@@ -460,6 +463,9 @@ async def probe_async_endpoint(payload: TestConnectionPayload):
     """验证异步协议：用假 task_id 请求 GET /v1/tasks/{fake_id}。
 
     收到 400 Invalid task ID = 端点存在且 Key 有效；401/403 = Key 无效；404/连接失败 = 不支持异步端点。"""
+
+    # 同 test_provider_connection：cli.py 的状态函数未在本模块命名空间
+    from app.routers.cli import codex_status, gemini_cli_status, jimeng_status
 
     base_url = (payload.base_url or "").strip().rstrip("/")
 
