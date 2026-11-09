@@ -386,6 +386,8 @@
         "canvas.tplGroupNamePrompt": { zh: "分组名称", en: "Group name" },
         "canvas.tplDeleteGroupConfirm": { zh: "删除分组？该分组里的我的模板会移动到“我的”。", en: "Delete this group? My templates in it will move to Mine." },
         "canvas.comfyImageList": { zh: "多图", en: "list" },
+        "canvas.comfyImageListPorts": { zh: "图片 {n} 张（按序进 img_1..img_9）", en: "Images {n} (into img_1..img_9 in order)" },
+        "canvas.comfyImageSlot": { zh: "图 {n}", en: "Image {n}" },
         "canvas.comfyAddImages": { zh: "添加图片", en: "Add images" }
     });
 })();

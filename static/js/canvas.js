@@ -10336,7 +10336,7 @@ function renderComfyBody(node){
         <div class="comfy-content">
             <div class="prompt-list"></div>
             <div class="comfy-images ${(mode === 'text' || (mode === 'custom' && !mediaFieldCount)) ? 'hidden' : ''}">
-                <div class="node-muted text-[10px] font-bold uppercase tracking-widest">${mode === 'custom' ? `Media · Images ${imageFieldCount}${imageListFieldCount ? ` +${imageListFieldCount} ${tr('canvas.comfyImageList')}` : ''} · Videos ${videoFieldCount} · Audio ${audioFieldCount}` : 'Images'}</div>
+                <div class="node-muted text-[10px] font-bold uppercase tracking-widest">${mode === 'custom' ? `Media · ${imageListFieldCount ? trf('canvas.comfyImageListPorts', {n: imageInputs.length}) : `Images ${imageFieldCount}`} · Videos ${videoFieldCount} · Audio ${audioFieldCount}` : 'Images'}</div>
                 <div class="input-list mt-2"></div>
                 ${(mode === 'custom' && mediaFieldCount) ? `<button type="button" class="comfy-add-images"><i data-lucide="image-plus" class="w-3.5 h-3.5"></i>${tr('canvas.comfyAddImages')}</button>` : ''}
             </div>
@@ -10406,20 +10406,33 @@ function addImagesToComfyNode(nodeId){
 }
 function renderComfyImages(list, node, imageInputs){
     list.innerHTML = imageInputs.length ? '' : `<div class="node-muted text-[11px] py-2">${tr('canvas.groupEmpty')}</div>`;
+    // 图片列表字段（ImagePicker 之类）的下游是 img_1..img_9 端口，用户最需要知道的是
+    // "第几张图进第几个端口"。所以标签优先显示端口号，其次才是文件名——光看图名长得像
+    // 的两张图完全分不出谁先谁后。
+    const listFieldCount = (node?.mode === 'custom') ? comfyFields(node, 'image_list').length : 0;
     imageInputs.forEach((src, i) => {
         const item = document.createElement('div');
-        item.className = 'input-item';
+        item.className = `input-item${listFieldCount ? ' is-list-slot' : ''}`;
         item.draggable = true;
         item.dataset.sourceId = src.id;
         const firstRef = (src.refs || [])[0];
         const kind = mediaKindForRef(firstRef || src.preview);
         const icon = kind === 'video' ? 'file-video' : kind === 'audio' ? 'file-audio' : 'image';
-        const label = kind === 'image' ? `${tr('canvas.image')} ${i + 1}` : `${nodeTitleForMedia({mediaKind:kind})} ${i + 1}`;
+        const fileName = String(firstRef?.name || '').trim();
+        // 标签优先显示文件名：用户上传的图（"剪贴板图片 (1).jpg" / "(2).jpg"）文件名本身就
+        // 带顺序信息，比"上传 1/2"有用得多。没有文件名时退回端口号/序号。
+        // 列表字段（ImagePicker 之类）角标序号即 img_1..img_9 端口序，顺序改了就变了。
+        const label = fileName
+            || (kind === 'image'
+                ? (listFieldCount ? `img_${i + 1}` : trf('canvas.comfyImageSlot', {n: i + 1}))
+                : `${nodeTitleForMedia({mediaKind:kind})} ${i + 1}`);
+        const title = fileName ? `${fileName}（第 ${i + 1} 张）` : label;
         const previewHtml = kind === 'video' && src.preview && !isMissingAssetUrl(src.preview)
             ? canvasVideoPreviewHtml(src.preview, 256)
             : kind === 'audio'
                 ? `<i data-lucide="${icon}" class="w-6 h-6 text-slate-400"></i>`
                 : (src.preview && !isMissingAssetUrl(src.preview) ? canvasPreviewImgHtml(src.preview, 256) : (src.preview ? missingAssetHtml(src.preview, true) : `<i data-lucide="${icon}" class="w-6 h-6 text-slate-400"></i>`));
+        item.title = title;
         item.innerHTML = `<span class="input-index">${i + 1}</span>${previewHtml}<span class="input-label">${escapeHtml(label)}</span>`;
         item.ondragstart = e => {
             e.stopPropagation();
