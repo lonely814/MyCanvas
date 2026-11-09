@@ -70,6 +70,12 @@
         "comfy.runFailed": { zh: "运行失败", en: "Run failed" },
         "comfy.invalidJson": { zh: "不是有效的 JSON 文件", en: "Not a valid JSON file" },
         "comfy.namePrompt": { zh: "给这个工作流起个名字（中文/英文/数字/_-.）：", en: "Name this workflow (letters/numbers/_-.):" },
-        "comfy.uploaded": { zh: "已上传：", en: "Uploaded: " }
+        "comfy.uploaded": { zh: "已上传：", en: "Uploaded: " },
+        "comfy.imageListEmpty": { zh: "还没有图片，点下方按钮添加", en: "No images yet. Use the button below to add." },
+        "comfy.imageListAdd": { zh: "添加图片", en: "Add images" },
+        "comfy.reextract": { zh: "重新自动抽取", en: "Re-extract fields" },
+        "comfy.reextractConfirm": { zh: "按当前工作流重新抽取字段会覆盖「{name}」的手工调整，继续？", en: "Re-extracting fields will overwrite manual changes to \"{name}\". Continue?" },
+        "comfy.reextractDone": { zh: "已重新抽取：{fields} 个字段（{images} 个图片输入）", en: "Re-extracted: {fields} fields ({images} image inputs)" },
+        "comfy.reextractFailed": { zh: "重新抽取失败", en: "Re-extract failed" }
     });
 })();

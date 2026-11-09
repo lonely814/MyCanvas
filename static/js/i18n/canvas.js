@@ -384,6 +384,8 @@
         "canvas.tplNewGroupPrompt": { zh: "新分组名称", en: "New group name" },
         "canvas.tplNewGroupDefault": { zh: "新分组", en: "New group" },
         "canvas.tplGroupNamePrompt": { zh: "分组名称", en: "Group name" },
-        "canvas.tplDeleteGroupConfirm": { zh: "删除分组？该分组里的我的模板会移动到“我的”。", en: "Delete this group? My templates in it will move to Mine." }
+        "canvas.tplDeleteGroupConfirm": { zh: "删除分组？该分组里的我的模板会移动到“我的”。", en: "Delete this group? My templates in it will move to Mine." },
+        "canvas.comfyImageList": { zh: "多图", en: "list" },
+        "canvas.comfyAddImages": { zh: "添加图片", en: "Add images" }
     });
 })();

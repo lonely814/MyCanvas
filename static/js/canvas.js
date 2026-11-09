@@ -10250,10 +10250,17 @@ async function ensureRunningHubWorkflow(workflowId){
     return runningHubWorkflowCache[workflowId];
 }
 function comfyFieldKind(f){
+    if(f?.type === 'image_list') return 'image_list';
     if(['image','video','audio'].includes(f?.type)) return f.type;
     const key = `${f.input || ''} ${f.name || ''}`.toLowerCase();
     if(f.type === 'textarea' || /prompt|text|提示词|正向|负向/.test(key)) return 'prompt';
     return 'setting';
+}
+// 所有占用"上游图片"的字段：单图槽位和图片列表共用同一个图源序列，
+// 分配时按 image_order 统一排序处理（见 runComfyNode）。
+function comfyImageFieldKind(f){
+    const kind = comfyFieldKind(f);
+    return kind === 'image' || kind === 'image_list';
 }
 function comfyFields(node, kind='all'){
     const data = currentComfyWorkflow(node);
@@ -10310,9 +10317,10 @@ function renderComfyBody(node){
     const promptInputs = ordered.filter(src => src.prompt && !src.refs?.length);
     const mode = node.mode || 'text';
     const imageFieldCount = mode === 'custom' ? comfyFields(node, 'image').length : 0;
+    const imageListFieldCount = mode === 'custom' ? comfyFields(node, 'image_list').length : 0;
     const videoFieldCount = mode === 'custom' ? comfyFields(node, 'video').length : 0;
     const audioFieldCount = mode === 'custom' ? comfyFields(node, 'audio').length : 0;
-    const mediaFieldCount = imageFieldCount + videoFieldCount + audioFieldCount;
+    const mediaFieldCount = imageFieldCount + imageListFieldCount + videoFieldCount + audioFieldCount;
     if(mode === 'custom'){
         const validWorkflow = validComfyWorkflowName(node.comfyWorkflow);
         if(node.comfyWorkflow && node.comfyWorkflow !== validWorkflow) node.comfyWorkflow = validWorkflow;
@@ -10328,8 +10336,9 @@ function renderComfyBody(node){
         <div class="comfy-content">
             <div class="prompt-list"></div>
             <div class="comfy-images ${(mode === 'text' || (mode === 'custom' && !mediaFieldCount)) ? 'hidden' : ''}">
-                <div class="node-muted text-[10px] font-bold uppercase tracking-widest">${mode === 'custom' ? `Media · Images ${imageFieldCount} · Videos ${videoFieldCount} · Audio ${audioFieldCount}` : 'Images'}</div>
+                <div class="node-muted text-[10px] font-bold uppercase tracking-widest">${mode === 'custom' ? `Media · Images ${imageFieldCount}${imageListFieldCount ? ` +${imageListFieldCount} ${tr('canvas.comfyImageList')}` : ''} · Videos ${videoFieldCount} · Audio ${audioFieldCount}` : 'Images'}</div>
                 <div class="input-list mt-2"></div>
+                ${(mode === 'custom' && mediaFieldCount) ? `<button type="button" class="comfy-add-images"><i data-lucide="image-plus" class="w-3.5 h-3.5"></i>${tr('canvas.comfyAddImages')}</button>` : ''}
             </div>
         </div>
         <div class="comfy-controls">
@@ -10358,9 +10367,42 @@ function renderComfyBody(node){
         renderComfyImages(wrap.querySelector('.input-list'), node, mode === 'custom' ? mediaInputs : imageInputs);
     }
     renderComfySettings(wrap.querySelector('.comfy-settings'), node);
+    const addImagesBtn = wrap.querySelector('.comfy-add-images');
+    if(addImagesBtn) addImagesBtn.onclick = e => { e.stopPropagation(); addImagesToComfyNode(node.id); };
     wrap.querySelector('.comfy-run').onclick = e => { e.stopPropagation(); runCanvasGenerate(node.id); };
     bindCascadeButtons(wrap, node.id);
     return wrap;
+}
+// 在 ComfyUI 节点上直接加图：走和画布拖放同一条链路（上传 → 建图片节点 → 接线），
+// 省掉"手动建 N 个图片节点再逐个连线"的重复劳动。多张时自动包成一个 group 节点，
+// 这样上游图片顺序就是选图顺序。
+function addImagesToComfyNode(nodeId){
+    const node = nodes.find(n => n.id === nodeId);
+    if(!node || node.type !== 'comfy') return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*,video/*,audio/*';
+    input.multiple = true;
+    input.onchange = async () => {
+        const files = [...(input.files || [])].slice(0, CANVAS_UPLOAD_MAX);
+        if(!files.length) return;
+        pushUndo();
+        const point = {x:Number(node.x || 0) - 320, y:Number(node.y || 0)};
+        try {
+            const created = await uploadMediaFiles(files, point, false, {group:true});
+            if(!created?.length) return;
+            const source = created.group || created[0];
+            if(!connections.some(c => c.from === source.id && c.to === node.id)){
+                connections.push({id:uid('c'), from:source.id, to:node.id});
+            }
+            syncGeneratorInputs();
+            render();
+            scheduleSave();
+        } catch(err) {
+            showErrorModal(err.message || (langIsEn() ? 'Image import failed' : '导入图片失败'), langIsEn() ? 'Image import failed' : '导入图片失败');
+        }
+    };
+    input.click();
 }
 function renderComfyImages(list, node, imageInputs){
     list.innerHTML = imageInputs.length ? '' : `<div class="node-muted text-[11px] py-2">${tr('canvas.groupEmpty')}</div>`;
@@ -13297,12 +13339,17 @@ async function runComfyNode(nodeId, opts={}){
     const allRefs = sources.flatMap(s => s.refs || []);
     const refs = imageRefsOnly(allRefs);
     const mode = node.mode || 'text';
-    const customImageFields = mode === 'custom' ? comfyFields(node, 'image') : [];
+    // 图片类字段 = 单图槽位 + 图片列表，两者共用上游图片序列，这里统一拿。
+    const customImageFields = mode === 'custom' ? comfyFields(node).filter(comfyImageFieldKind) : [];
     const customVideoFields = mode === 'custom' ? comfyFields(node, 'video') : [];
     const customAudioFields = mode === 'custom' ? comfyFields(node, 'audio') : [];
     const customPromptFields = mode === 'custom' ? comfyFields(node, 'prompt') : [];
     if((mode === 'text' || (mode === 'custom' && customPromptFields.length)) && !prompt){ alert(tr('canvas.needPrompt')); return; }
-    if((mode !== 'text' && mode !== 'custom' && !refs.length) || (mode === 'custom' && refs.length < customImageFields.length)){ alert(tr('canvas.needImage')); return; }
+    // 最少需要几张上游图：每个单图槽位吃 1 张，图片列表字段至少吃 1 张。
+    // 以前直接拿 refs.length < 字段数，加了列表字段后会把"1 个字段收 9 张图"误判成不够。
+    const minImageRefs = customImageFields.filter(f => comfyFieldKind(f) === 'image').length
+        + (customImageFields.some(f => comfyFieldKind(f) === 'image_list') ? 1 : 0);
+    if((mode !== 'text' && mode !== 'custom' && !refs.length) || (mode === 'custom' && refs.length < minImageRefs)){ alert(tr('canvas.needImage')); return; }
     if(mode === 'custom' && videoRefsOnly(allRefs).length < customVideoFields.length){ alert(langIsEn() ? 'Please connect enough video inputs for this ComfyUI workflow.' : '请为这个 ComfyUI 工作流连接足够的视频输入'); return; }
     if(mode === 'custom' && audioRefsOnly(allRefs).length < customAudioFields.length){ alert(langIsEn() ? 'Please connect enough audio inputs for this ComfyUI workflow.' : '请为这个 ComfyUI 工作流连接足够的音频输入'); return; }
     let out = outputForNode(node, 480);
@@ -13364,7 +13411,7 @@ async function runComfyNode(nodeId, opts={}){
             // 而不必删掉字段重建。未设置 image_order 时等价于原来的列表顺序。
             const bySlot = list => [...list].sort((a, b) =>
                 (Number(a.image_order) || 0) - (Number(b.image_order) || 0));
-            const imageFields = bySlot(fields.filter(f => comfyFieldKind(f) === 'image'));
+            const imageFields = bySlot(fields.filter(f => comfyImageFieldKind(f)));
             const videoFields = bySlot(fields.filter(f => comfyFieldKind(f) === 'video'));
             const audioFields = bySlot(fields.filter(f => comfyFieldKind(f) === 'audio'));
             const promptFields = fields.filter(f => comfyFieldKind(f) === 'prompt');
@@ -13388,7 +13435,34 @@ async function runComfyNode(nodeId, opts={}){
                 });
                 if(missing.length) throw new Error(trf('canvas.comfyRequiredMediaMissing', {fields: missing.join('、')}));
             };
-            await assignMediaFields(imageFields, refs);
+            // 图片字段（单图槽位 + 图片列表）按 image_order 统一排序后依次消费上游图片：
+            // 单图字段吃 1 张，图片列表字段吃掉当时剩下的全部。这样节点上看到的顺序
+            // 就是实际喂进去的顺序，调 image_order 能精确控制第几张图进哪个输入。
+            const assignImageFieldsBySlot = async (imageRefList) => {
+                let cursor = 0;
+                const missing = [];
+                for(const f of imageFields){
+                    if(!f.node || !f.input) continue;
+                    const isList = comfyFieldKind(f) === 'image_list';
+                    const take = isList ? imageRefList.slice(cursor) : imageRefList.slice(cursor, cursor + 1);
+                    if(isList && !take.length){
+                        if(f.required === true) missing.push(f.name || f.input || `#${f.node}`);
+                        continue;
+                    }
+                    const names = [];
+                    for(const ref of take) names.push(await comfyNameForRef(ref));
+                    cursor += take.length;
+                    const name = isList ? JSON.stringify(names) : names[0];
+                    if(!name){
+                        if(f.required === true) missing.push(f.name || f.input || `#${f.node}`);
+                        continue;
+                    }
+                    params[f.node] = params[f.node] || {};
+                    params[f.node][f.input] = name;
+                }
+                if(missing.length) throw new Error(trf('canvas.comfyRequiredMediaMissing', {fields: missing.join('、')}));
+            };
+            await assignImageFieldsBySlot(refs);
             await assignMediaFields(videoFields, videoRefsOnly(allRefs));
             await assignMediaFields(audioFields, audioRefsOnly(allRefs));
             promptFields.forEach(f => {

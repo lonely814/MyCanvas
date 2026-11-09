@@ -1038,7 +1038,47 @@ def save_workflow_config(name: str, payload: WorkflowConfig):
 
 
 
-@router.delete("/api/workflows/{name:path}")
+@router.post("/api/workflows/{name:path}/reextract")
+
+def reextract_workflow_config(name: str):
+
+    """按当前工作流 JSON 重新生成字段配置，覆盖已落盘的 config。
+
+    导入时自动抽取过一次，之后抽取逻辑升级（例如新增了"图片列表"类型识别）不会
+    回头补已有配置——已存成 0 个字段的工作流会一直是 0。这个端点给一个显式入口，
+    代价是丢弃用户在设置页的手工调整，所以前端要二次确认。
+    """
+
+    if not WORKFLOW_NAME_RE.match(name):
+
+        raise HTTPException(status_code=400, detail="Invalid workflow name")
+
+    workflow_path = workflow_path_from_name(name)
+
+    if not os.path.exists(workflow_path):
+
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    with open(workflow_path, "r", encoding="utf-8") as f:
+
+        workflow = json.load(f)
+
+    title = os.path.splitext(os.path.basename(name))[0]
+
+    config, io = build_comfy_auto_config(workflow, title)
+
+    write_json_atomic(workflow_config_path(name), config, indent=2)
+
+    return {"config": config, "counts": {
+        "image": sum(1 for m in io["media"] if m["kind"] == "image"),
+        "image_list": sum(1 for m in io["media"] if m["kind"] == "image_list"),
+        "video": sum(1 for m in io["media"] if m["kind"] == "video"),
+        "audio": sum(1 for m in io["media"] if m["kind"] == "audio"),
+        "prompt": len(io["prompts"]),
+        "seed": len(io["seeds"]),
+    }}
+
+
 
 def delete_workflow(name: str):
 
@@ -1099,7 +1139,15 @@ def run_workflow(name: str, payload: WorkflowRunRequest):
 
             # 类型转换
 
-            if field.type in ("number", "slider"):
+            if field.type == "image_list":
+
+                # 图片列表（ImagePicker 的 image_paths）：ComfyUI 只认 JSON 数组字符串。
+                # 前端可能传 list，也可能传已经序列化好的字符串，统一成前者再 dump。
+                if isinstance(value, (list, tuple)):
+
+                    value = json.dumps([str(x) for x in value if str(x).strip()], ensure_ascii=False)
+
+            elif field.type in ("number", "slider"):
 
                 try:
 

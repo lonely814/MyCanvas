@@ -19,8 +19,8 @@
     <script src="/static/vendor/js/tailwindcss-cdn.js?v=2026.09.26.1787881168"></script>
     <script src="/static/vendor/js/lucide.js?v=2026.09.26.1787881168"></script>
     <script src="/static/js/theme.js?v=2026.09.26.1790448014"></script>
-    <script src="/static/js/i18n.js?v=2026.09.26.1794003256"></script>
-    <link rel="stylesheet" href="/static/css/comfyui-settings.css?v=2026.09.26.1790448036">
+    <script src="/static/js/i18n.js?v=2026.09.26.1794233464"></script>
+    <link rel="stylesheet" href="/static/css/comfyui-settings.css?v=2026.09.26.1794233412">
     <link rel="stylesheet" href="/static/css/theme.css?v=2026.09.26.1791044076">
     <link rel="stylesheet" href="/static/css/theme-black.css?v=2026.09.26.1791044076">
 </head>
@@ -84,6 +84,9 @@
                                     <div id="editorSub" class="editor-sub" data-i18n="comfy.editorSubDefault">从左侧列表选择，或上传新的 API 工作流</div>
                                 </div>
                                 <div class="content-actions">
+                                    <button id="reextractBtn" class="action-btn" type="button" onclick="onReextract()" style="display:none">
+                                        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span data-i18n="comfy.reextract">重新自动抽取</span>
+                                    </button>
                                     <button id="deleteBtn" class="action-btn danger-btn" type="button" onclick="onDelete()" style="display:none">
                                         <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span data-i18n="common.delete">删除</span>
                                     </button>
@@ -124,6 +127,6 @@
         <img id="imageLightboxImg" src="" alt="preview" onclick="event.stopPropagation()">
     </div>
 
-    <script src="/static/js/comfyui-settings.js?v=2026.09.26.1793944092"></script>
+    <script src="/static/js/comfyui-settings.js?v=2026.09.26.1794233366"></script>
 </body>
 </html>

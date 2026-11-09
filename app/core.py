@@ -2302,8 +2302,19 @@ def collect_required_comfy_media(params: Dict[str, Any]) -> List[str]:
             continue
         scan_inputs = node_inputs.get("inputs") if isinstance(node_inputs.get("inputs"), dict) else node_inputs
         for input_name, value in scan_inputs.items():
-            if is_comfy_input_media_value(input_name, value):
-                required.append(value)
+            if not is_comfy_input_media_value(input_name, value):
+                continue
+            # 图片列表字段的值是 JSON 数组字符串（ImagePicker 的 image_paths）。
+            # 必须拆成单个文件名逐个补传，否则会把整串 ["a.png","b.png"] 当成一个文件名去 /view。
+            if isinstance(value, str) and value.strip().startswith("["):
+                try:
+                    items = json.loads(value)
+                except (TypeError, ValueError):
+                    items = None
+                if isinstance(items, list):
+                    required.extend(x for x in items if isinstance(x, str) and x.strip())
+                    continue
+            required.append(value)
     return list(dict.fromkeys(required))
 
 def comfy_prompt_error_message(status_code: int, error_body: str) -> str:
@@ -12545,6 +12556,9 @@ COMFY_MEDIA_LOADERS = {
     "LoadImage": ("image", "image"),
     "LoadImageMask": ("image", "image"),
     "LoadImageOutput": ("image", "image"),
+    # ImagePicker（第三方 ComfyUI_image_picker）把一串图装进一个 JSON 数组字符串，
+    # 节点本身输出 9 个 IMAGE 端口。它在画布上对应"一个字段吃多张图"，不是 9 个槽位。
+    "ImagePicker": ("image_list", "image_paths"),
     "LoadVideo": ("video", "video"),
     "LoadVideoUpload": ("video", "video"),
     "VHS_LoadVideo": ("video", "video"),
@@ -12577,6 +12591,55 @@ COMFY_MEDIA_INPUT_CANDIDATES = {
     "audio": ("audio", "audio_path", "audiofile", "file", "filename", "path"),
 }
 
+# "一个字段吃一串图"的输入名。表外节点只要输入名命中且值像 JSON 数组就归为
+# image_list，这样别的多图列表插件不必逐个加进 COMFY_MEDIA_LOADERS。
+COMFY_IMAGE_LIST_INPUT_NAMES = ("image_paths", "image_list", "images", "files")
+
+def _comfy_looks_like_image_list(value) -> bool:
+    """值是 JSON 数组字符串（或已是 list）且元素都是字符串。"""
+    items = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text.startswith("["):
+            return False
+        try:
+            items = json.loads(text)
+        except (TypeError, ValueError):
+            return False
+    if not isinstance(items, list):
+        return False
+    return all(isinstance(x, str) for x in items)
+
+def _comfy_image_list_default(value) -> list:
+    """把 workflow 里的 image_paths 值规整成 list[str]；解析失败按空列表。"""
+    items = value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return []
+        try:
+            items = json.loads(text)
+        except (TypeError, ValueError):
+            return []
+    if not isinstance(items, list):
+        return []
+    return [x for x in items if isinstance(x, str)]
+
+def _comfy_image_list_kind(class_type: str, inputs: dict):
+    """识别"一个输入装一串图"的节点，返回 (kind, input_name) 或 None。"""
+    lowered = str(class_type or "").lower()
+    for name in COMFY_IMAGE_LIST_INPUT_NAMES:
+        value = inputs.get(name)
+        if not isinstance(value, (str, list)):
+            continue
+        # 输入名命中 + 值像数组才认，避免把普通字符串输入误判成图片列表。
+        if not _comfy_looks_like_image_list(value):
+            continue
+        if name in ("images", "files") and "image" not in lowered and "load" not in lowered:
+            continue
+        return ("image_list", name)
+    return None
+
 def is_comfy_api_workflow(workflow) -> bool:
     """ComfyUI API 格式：dict 且值为含 class_type 的 dict（与上传接口同一判据）。"""
     if not isinstance(workflow, dict) or not workflow:
@@ -12601,6 +12664,11 @@ def _comfy_media_loader_kind(class_type: str, inputs: dict):
     pair = COMFY_MEDIA_LOADERS.get(class_type)
     if pair:
         return pair
+    # 多图列表优先于单图兜底：同一个节点既可能叫 xxxImageList 也可能有 image 输入名，
+    # 按数组值来判比按类名猜更可靠。
+    list_pair = _comfy_image_list_kind(class_type, inputs)
+    if list_pair:
+        return list_pair
     lowered = str(class_type or "").lower()
     if "load" not in lowered and "input" not in lowered:
         return None
@@ -12646,11 +12714,15 @@ def analyze_comfy_workflow_io(workflow: dict) -> dict:
         if pair:
             kind, input_name = pair
             default = inputs.get(input_name)
+            if kind == "image_list":
+                default = _comfy_image_list_default(default)
+            else:
+                default = default if isinstance(default, str) else ""
             media.append({
                 "node": str(node_id),
                 "input": input_name,
                 "kind": kind,
-                "default": default if isinstance(default, str) else "",
+                "default": default,
             })
             continue
         for key in COMFY_PROMPT_INPUT_KEYS:
@@ -12685,10 +12757,16 @@ def build_comfy_auto_config(workflow: dict, title: str = ""):
     io = analyze_comfy_workflow_io(workflow)
     fields = []
     media_counters = {}
-    media_kind_names = {"image": "图片", "video": "视频", "audio": "音频"}
+    # 图片列表和单图共用同一个槽位序列：一个工作流里同时有 LoadImage 和 ImagePicker 时，
+    # 上游图片按 image_order 顺序先喂单图槽位、再喂列表，顺序才和节点上看到的一致。
+    order_counters = {}
+    order_keys = {"image_list": "image"}
+    media_kind_names = {"image": "图片", "video": "视频", "audio": "音频", "image_list": "图片列表"}
     for item in io["media"]:
         kind = item["kind"]
         media_counters[kind] = media_counters.get(kind, 0) + 1
+        order_key = order_keys.get(kind, kind)
+        order_counters[order_key] = order_counters.get(order_key, 0) + 1
         fields.append({
             "id": f"f_{uuid.uuid4().hex[:7]}",
             "node": item["node"],
@@ -12696,7 +12774,7 @@ def build_comfy_auto_config(workflow: dict, title: str = ""):
             "name": f"{media_kind_names.get(kind, kind)} {media_counters[kind]}",
             "type": kind,
             "default": item["default"],
-            "image_order": media_counters[kind] - 1,
+            "image_order": order_counters[order_key] - 1,
             "required": True,
         })
     for item in io["prompts"]:

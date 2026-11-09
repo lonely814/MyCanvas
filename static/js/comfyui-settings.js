@@ -23,6 +23,7 @@ const TYPES = [
     { v:'slider', zh:'滑块', en:'Slider' },
     { v:'dropdown', zh:'下拉框', en:'Dropdown' },
     { v:'image', zh:'图片', en:'Image' },
+    { v:'image_list', zh:'图片列表（多图）', en:'Image List (multi)' },
     { v:'video', zh:'视频', en:'Video' },
     { v:'audio', zh:'音频', en:'Audio' },
     { v:'boolean', zh:'开关', en:'Switch' },
@@ -128,6 +129,9 @@ let isBuiltin = false;
 let previewValues = {};         // field_id -> 发给后端的值（图片：comfy 文件名）
 let previewRandomActive = {};   // field_id -> 筛子运行时是否激活；未设置时默认激活
 let previewImageUrls = {};      // field_id -> 浏览器可显示的本地 URL（仅图片字段）
+// 图片列表字段：field_id -> { comfy_name: blobUrl }。一个字段有多张图，
+// 而 comfy_name 浏览器打不开，预览地址要单独按文件名索引。
+let imageListPreviewUrls = {};
 let runResult = null;           // url 或 null
 let workspaceMode = 'graph';
 let miniView = { k: 1, x: 0, y: 0 };
@@ -153,12 +157,24 @@ function escapeAttr(s){ return escapeHtml(s); }
 // &#39;，而 HTML 属性在解析时会实体解码，值又变回 '，能逃出 JS 字符串执行。
 function jsArg(value){ return escapeHtml(JSON.stringify(String(value == null ? '' : value))); }
 function fieldKind(f){
+    if(f.type === 'image_list') return 'image_list';
     if(['image','video','audio'].includes(f.type)) return f.type;
     const key = `${f.input || ''} ${f.name || ''}`.toLowerCase();
     if(f.type === 'textarea' || /prompt|text|提示词|正向|负向/.test(key)) return 'prompt';
     return 'setting';
 }
-function isMediaField(f){ return ['image','video','audio'].includes(fieldKind(f)); }
+function isMediaField(f){ return ['image','image_list','video','audio'].includes(fieldKind(f)); }
+// 图片列表字段存的是文件名数组，序列化成 JSON 字符串才是 ComfyUI 认识的值。
+function previewValueForField(f, raw){
+    if(fieldKind(f) !== 'image_list') return raw;
+    if(Array.isArray(raw)) return JSON.stringify(raw);
+    return raw || '[]';
+}
+function previewListForField(f, raw){
+    if(Array.isArray(raw)) return raw;
+    try { const v = JSON.parse(raw || '[]'); return Array.isArray(v) ? v : []; }
+    catch { return []; }
+}
 function mediaFieldLabel(kind, count){
     const labels = currentLang() === 'en'
         ? {image:'Images', video:'Videos', audio:'Audio'}
@@ -307,10 +323,12 @@ async function selectWorkflow(name){
         currentConfig.mini_cards = miniCards;
         // 释放上一次的图片 blob URL
         Object.values(previewImageUrls).forEach(u => { try { URL.revokeObjectURL(u); } catch(e){} });
+        Object.values(imageListPreviewUrls).forEach(map => Object.values(map || {}).forEach(u => { try { URL.revokeObjectURL(u); } catch(e){} }));
         previewImageUrls = {};
+        imageListPreviewUrls = {};
         previewValues = {};
         currentConfig.fields.forEach(f => {
-            if(f.default !== undefined && f.default !== null) previewValues[f.id] = f.default;
+            if(f.default !== undefined && f.default !== null) previewValues[f.id] = previewValueForField(f, f.default);
         });
         previewRandomActive = {};
         runResult = null;
@@ -357,7 +375,7 @@ function toggleField(node, input){
             if(type === 'number') f.random_enabled = false;
         }
         currentConfig.fields.push(f);
-        if(f.default !== undefined && f.default !== null) previewValues[f.id] = f.default;
+        if(f.default !== undefined && f.default !== null) previewValues[f.id] = previewValueForField(f, f.default);
     }
     renderEditor();
     renderPreview();
@@ -389,6 +407,12 @@ function guessType(value, inputName){
         return 'number';
     }
     if(typeof value === 'string'){
+        // 图片列表：值是 JSON 数组字符串（ImagePicker 的 image_paths）。要在
+        // 长度 > 60 判 textarea 之前拦下，否则长列表会被猜成多行文本。
+        if(/^\s*\[/.test(value)){
+            try { if(Array.isArray(JSON.parse(value))) return 'image_list'; } catch(e){}
+        }
+        if(/image_paths|image_list/.test(lc)) return 'image_list';
         if(/prompt|text|description/.test(lc) || (value && value.length > 60)) return 'textarea';
         if(/video|movie|mp4|webm|mov|m4v|vhs/.test(lc) || /\.(mp4|webm|mov|m4v|avi|mkv)(\?|$)/i.test(value)) return 'video';
         if(/audio|sound|music|voice|wav|mp3/.test(lc) || /\.(mp3|wav|m4a|aac|ogg|flac)(\?|$)/i.test(value)) return 'audio';
@@ -403,7 +427,7 @@ function updateField(fieldId, key, value){
     if(!f) return;
     f[key] = value;
     if(key === 'type'){
-        previewValues[fieldId] = (value === 'boolean') ? false : (value === 'number' || value === 'slider' ? 0 : '');
+        previewValues[fieldId] = (value === 'boolean') ? false : (value === 'number' || value === 'slider' ? 0 : (value === 'image_list' ? '[]' : ''));
         f.random_enabled = value === 'number' ? !!f.random_enabled : false;
         delete previewRandomActive[fieldId];
     }
@@ -442,6 +466,8 @@ function renderEditor(){
     if(!currentWorkflow){
         deleteBtn.style.display = 'none';
         saveBtn.style.display = 'none';
+        const rb0 = document.getElementById('reextractBtn');
+        if(rb0) rb0.style.display = 'none';
         nodeListEl.innerHTML = '';
         document.getElementById('graphCard').style.display = 'none';
         document.getElementById('nodesToggle').style.display = 'none';
@@ -453,6 +479,9 @@ function renderEditor(){
     subEl.textContent = tf('comfy.nodeStats', {nodes:Object.keys(currentWorkflow).length, fields:currentConfig.fields.length}) + (isBuiltin ? ` · ${tr('comfy.builtin')}` : '');
     deleteBtn.style.display = isBuiltin ? 'none' : 'inline-flex';
     saveBtn.style.display = 'inline-flex';
+    // 内置工作流不做自动抽取（它们的配置就是手写的）
+    const rb = document.getElementById('reextractBtn');
+    if(rb) rb.style.display = isBuiltin ? 'none' : 'inline-flex';
 
     renderGraph();
     renderWorkspaceView();
@@ -759,6 +788,7 @@ document.addEventListener('keydown', e => {
 // 字段归类，与画布运行时的 comfyFieldKind 保持一致：
 // 界面按同一分类决定暴露哪些额外设置，否则会出现"编辑器能配但运行时按另一种分类读"的错位。
 function fieldKindOf(f){
+    if(f?.type === 'image_list') return 'image_list';
     if(['image','video','audio'].includes(f?.type)) return f.type;
     const key = `${f?.input || ''} ${f?.name || ''}`.toLowerCase();
     if(f?.type === 'textarea' || /prompt|text|提示词|正向|负向/.test(key)) return 'prompt';
@@ -769,7 +799,7 @@ function renderInputRow(nodeId, inputKey, rawValue){
     const active = !!f;
     const kind = active ? fieldKindOf(f) : '';
     const showExtras = active && (f.type === 'slider' || f.type === 'number' || f.type === 'dropdown'
-        || ['image','video','audio','prompt'].includes(kind));
+        || ['image','image_list','video','audio','prompt'].includes(kind));
     // 原始值类型徽章
     let valueBadge = '';
     const typeOf = typeof rawValue;
@@ -807,7 +837,7 @@ function renderExtras(f){
     const kind = fieldKindOf(f);
     // 媒体字段：槽位顺序 + 是否必填。画布上有多个上游图片时，按 image_order 升序依次分配，
     // 没有这个设置就只能靠字段在列表里的顺序，改顺序要删了重建。
-    if(['image','video','audio'].includes(kind)){
+    if(['image','image_list','video','audio'].includes(kind)){
         const fid = String(f.id ?? '');
         return `<div class="extras-row">
             <div class="extra-pair">${tr('comfy.slotOrder')}<input class="small-input" type="number" min="0" step="1" value="${f.image_order ?? 0}" oninput="updateField(${jsArg(fid)},'image_order',this.value===''?0:parseInt(this.value,10)||0)"></div>
@@ -1008,6 +1038,9 @@ function renderPreviewField(f){
         const opts = (f.options || []).map(o => `<option value="${escapeAttr(o)}" ${String(v)===String(o)?'selected':''}>${escapeHtml(o)}</option>`).join('');
         return `<div class="pfield">${label}<select class="pfield-select" onchange="setPreviewValue(${jsArg(f.id)},this.value)">${opts || `<option value="">${tr('comfy.noOptions')}</option>`}</select></div>`;
     }
+    if(fieldKind(f) === 'image_list'){
+        return `<div class="pfield">${label}${imageListFieldHtml(f, v, false)}</div>`;
+    }
     if(isMediaField(f)){
         // 浏览器显示用本地 blob URL；如果没有就尝试用 /output/ 之类的可访问 URL；都没有显示占位文字
         const displayUrl = previewImageUrls[f.id] || (typeof v === 'string' && /^(\/|https?:|blob:|data:)/.test(v) ? v : '');
@@ -1130,6 +1163,9 @@ function renderMiniCanvasPreview(target = previewCard, large = false){
 function renderMiniField(f){
     const label = `<div class="pfield-label">${escapeHtml(f.name || f.input)}</div>`;
     const v = previewValues[f.id] ?? f.default ?? (f.type==='boolean'?false:(f.type==='number'||f.type==='slider'?0:''));
+    if(fieldKind(f) === 'image_list'){
+        return `<div class="pfield">${label}${imageListFieldHtml(f, v, true)}</div>`;
+    }
     if(isMediaField(f)){
         const displayUrl = previewImageUrls[f.id] || (typeof v === 'string' && /^(\/|https?:|blob:|data:)/.test(v) ? v : '');
         return `<div class="pfield">${label}<div class="mini-image-drop" onclick="pickImage(${jsArg(f.id)})">${mediaPreviewHtml(fieldKind(f), displayUrl, v, true)}</div></div>`;
@@ -1312,6 +1348,71 @@ async function pickImage(fieldId){
     input.click();
 }
 
+// 图片列表字段的运行值永远是 JSON 数组字符串；可访问的预览地址单独存一份，
+// 因为 comfy_name 是 ComfyUI 侧的文件名，浏览器打不开。
+function imageListFieldHtml(f, value, compact){
+    const names = previewListForField(f, value);
+    const thumbs = names.map((name, i) => {
+        const url = (imageListPreviewUrls[f.id] || {})[name] || (previewImageUrls[f.id] || {})[name] || '';
+        const inner = url
+            ? `<img src="${escapeAttr(url)}">`
+            : `<span class="image-list-name">${escapeHtml(name)}</span>`;
+        return `<div class="image-list-item" title="${escapeAttr(name)}">
+            <span class="image-list-index">${i + 1}</span>
+            ${inner}
+            <button type="button" class="image-list-del" onclick="event.stopPropagation();removeImageListItem(${jsArg(f.id)},${i})">×</button>
+        </div>`;
+    }).join('');
+    return `<div class="image-list-field ${compact ? 'compact' : ''}">
+        <div class="image-list-grid">${thumbs || `<div class="image-list-empty">${tr('comfy.imageListEmpty')}</div>`}</div>
+        <button type="button" class="image-list-add" onclick="pickImageList(${jsArg(f.id)})">
+            <i data-lucide="image-plus" class="w-3.5 h-3.5"></i>${tr('comfy.imageListAdd')}
+        </button>
+    </div>`;
+}
+
+function removeImageListItem(fieldId, index){
+    const field = currentConfig?.fields?.find(f => f.id === fieldId);
+    if(!field) return;
+    const names = previewListForField(field, previewValues[fieldId] ?? field.default);
+    names.splice(index, 1);
+    previewValues[fieldId] = JSON.stringify(names);
+    renderPreview();
+    if(workspaceMode === 'canvas') renderMiniCanvasPreview(miniCanvasHost, true);
+}
+
+async function pickImageList(fieldId){
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.onchange = async () => {
+        const files = [...(input.files || [])];
+        if(!files.length) return;
+        const field = currentConfig?.fields?.find(f => f.id === fieldId);
+        if(!field) return;
+        const names = previewListForField(field, previewValues[fieldId] ?? field.default);
+        imageListPreviewUrls[fieldId] = imageListPreviewUrls[fieldId] || {};
+        const form = new FormData();
+        files.forEach(file => form.append('files', file));
+        try {
+            const resp = await fetch('/api/upload', { method:'POST', body:form });
+            if(!resp.ok) throw new Error(await resp.text().catch(() => `HTTP ${resp.status}`));
+            const data = await resp.json().catch(() => ({}));
+            const uploaded = (data.files || []).map(x => x.comfy_name || x.filename).filter(Boolean);
+            if(!uploaded.length) throw new Error('上传响应缺少文件名');
+            // 上传顺序即端口顺序，追加在已有列表后面。
+            files.forEach((file, i) => {
+                if(uploaded[i]) imageListPreviewUrls[fieldId][uploaded[i]] = URL.createObjectURL(file);
+            });
+            previewValues[fieldId] = JSON.stringify([...names, ...uploaded]);
+            renderPreview();
+            if(workspaceMode === 'canvas') renderMiniCanvasPreview(miniCanvasHost, true);
+        } catch(e){ alert(tr('comfy.imageUploadFailed')); }
+    };
+    input.click();
+}
+
 async function onRun(){
     if(!selectedName || !currentConfig) return;
     const btn = document.getElementById('runBtn');
@@ -1351,6 +1452,13 @@ function fieldsFromMiniCanvas(){
             fields[f.id] = mediaNodes[i]?.value || fields[f.id] || '';
         });
     });
+    // 图片列表：迷你画布上的图片节点按顺序全部塞进列表字段（第一个字段吃全部）。
+    const listField = currentConfig.fields.find(f => fieldKind(f) === 'image_list');
+    if(listField){
+        const miniImages = miniTestNodes.filter(n => n.type === 'image' && n.value).map(n => n.value);
+        if(miniImages.length) fields[listField.id] = JSON.stringify(miniImages);
+        else if(!fields[listField.id]) fields[listField.id] = '[]';
+    }
     promptFields.forEach(f => {
         fields[f.id] = prompt || fields[f.id] || '';
     });
@@ -1403,6 +1511,34 @@ async function onSave(){
         await loadList();
         new BroadcastChannel('studio-api').postMessage({ type: 'workflows-changed' });
     } catch(e){ alert(e.message || tr('comfy.saveFailed')); setStatus(tr('comfy.saveFailed')); }
+}
+
+async function onReextract(){
+    if(!selectedName || isBuiltin) return;
+    if(!confirm(tf('comfy.reextractConfirm', {name: currentConfig.title || selectedName}))) return;
+    try {
+        const res = await fetch(`/api/workflows/${encodeURIComponent(selectedName)}/reextract`, { method:'POST' });
+        if(!res.ok) throw new Error((await res.json()).detail || tr('comfy.reextractFailed'));
+        const data = await res.json();
+        currentConfig = data.config || currentConfig;
+        if(!currentConfig.mini_cards) currentConfig.mini_cards = {};
+        miniCards = {...defaultMiniCards(), ...currentConfig.mini_cards};
+        currentConfig.mini_cards = miniCards;
+        previewImageUrls = {};
+        imageListPreviewUrls = {};
+        previewValues = {};
+        currentConfig.fields.forEach(f => {
+            if(f.default !== undefined && f.default !== null) previewValues[f.id] = previewValueForField(f, f.default);
+        });
+        renderEditor();
+        renderPreview();
+        renderWorkspaceView();
+        const c = data.counts || {};
+        setStatus(tf('comfy.reextractDone', {
+            fields: currentConfig.fields.length,
+            images: (c.image || 0) + (c.image_list || 0)
+        }));
+    } catch(e){ alert(e.message || tr('comfy.reextractFailed')); }
 }
 
 async function onDelete(){
