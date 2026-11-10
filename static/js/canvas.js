@@ -525,6 +525,9 @@ let managerSelectedWorkflowIds = new Set();
 let managerSelectedPromptIds = new Set();
 let activeCanvasWorkflowCategoryId = '';
 const activeCanvasTaskPolls = new Set();
+// comfy 任务在途轮询登记：内联等待（waitCanvasComfyTaskResult）与刷新恢复
+// （pollCanvasComfyTaskResume）二选一，防止同一任务双跑双写。
+const activeComfyTaskPolls = new Set();
 let hoveredConnectionId = '';
 let lastMouseBoard = {x: 0, y: 0};
 let undoStack = [];
@@ -2293,7 +2296,7 @@ function handleCanvasUpdatedMessage(data){
     if(remoteUpdatedAt && remoteUpdatedAt <= Number(lastCanvasUpdatedAt || 0)) return;
     if(localCanvasDirty || saveCanvasAgain){
         // 本窗口有未保存改动：不能默默丢弃，交给冲突弹窗让用户二选一。
-        promptRemoteConflict();
+        promptRemoteConflict(remoteUpdatedAt);
         return;
     }
     clearTimeout(saveTimer);
@@ -12609,7 +12612,7 @@ async function runMiniMaxNode(nodeId, opts={}){
                 params,
                 type:'minimax-h3',
                 client_id:CLIENT_ID
-            }, {cascadeTargetId});
+            }, {cascadeTargetId, pendingId});
             outputs = resultMediaUrls(result);
             run.request = requestMetaFromResult(result);
         }
@@ -13268,7 +13271,7 @@ async function runLTXDirectorNode(nodeId, opts={}){
             params,
             type:'ltx-director',
             client_id:CLIENT_ID
-        }, {cascadeTargetId});
+        }, {cascadeTargetId, pendingId});
         run.request = requestMetaFromResult(result);
         if(result.error) throw new Error(result.error);
         const outputs = comfyResultOutputs(result);
@@ -13347,7 +13350,7 @@ async function runComfyNode(nodeId, opts={}){
                 workflow_json:'Z-Image.json',
                 type:'zimage',
                 client_id:CLIENT_ID
-            }, {cascadeTargetId});
+            }, {cascadeTargetId, pendingId});
             run.request = requestMetaFromResult(result);
             images = comfyResultOutputs(result);
         } else if(mode === 'enhance'){
@@ -13361,7 +13364,7 @@ async function runComfyNode(nodeId, opts={}){
                 },
                 type:'enhance',
                 client_id:CLIENT_ID
-            }, {cascadeTargetId});
+            }, {cascadeTargetId, pendingId});
             run.request = requestMetaFromResult(enhance);
             if(enhance.error) throw new Error(actionFailed('canvas.comfyEnhance', enhance.error));
             if(!enhance.images?.length) throw new Error(noReturnedImage('canvas.comfyEnhance'));
@@ -13459,7 +13462,7 @@ async function runComfyNode(nodeId, opts={}){
                 params,
                 type:'workflow-custom',
                 client_id:CLIENT_ID
-            }, {cascadeTargetId});
+            }, {cascadeTargetId, pendingId});
             run.request = requestMetaFromResult(result);
             if(result.error) throw new Error(actionFailed('canvas.comfyCustom', result.error));
             images = comfyResultOutputs(result);
@@ -13482,7 +13485,7 @@ async function runComfyNode(nodeId, opts={}){
                     "314": { value:Boolean(names[2]) }
                 },
                 client_id:CLIENT_ID
-            }, {cascadeTargetId});
+            }, {cascadeTargetId, pendingId});
             run.request = requestMetaFromResult(result);
             if(result.error) throw new Error(actionFailed('canvas.comfyEdit', result.error));
             if(!result.images?.length) throw new Error(noReturnedImage('canvas.comfyEdit'));
@@ -14359,23 +14362,77 @@ async function createCanvasComfyTask(payload, options={}){
 }
 async function waitCanvasComfyTaskResult(taskId, options={}){
     if(!taskId) throw new Error(actionFailed('canvas.comfyGenerate'));
-    while(true){
-        const cascadeTargetId = cascadeTargetIdFromOptions(options);
-        if(cascadeTargetId) ensureCascadeActive(cascadeTargetId);
-        const res = await cascadeFetch(`/api/canvas-comfy-tasks/${encodeURIComponent(taskId)}`, {}, {cascadeTargetId});
-        if(!res.ok){
-            if(res.status === 404) throw new Error(cascadeBackendRestartMessage());
-            throw new Error(await responseErrorMessage(res, actionFailed('canvas.comfyGenerate')));
+    activeComfyTaskPolls.add(taskId);
+    try {
+        while(true){
+            const cascadeTargetId = cascadeTargetIdFromOptions(options);
+            if(cascadeTargetId) ensureCascadeActive(cascadeTargetId);
+            const res = await cascadeFetch(`/api/canvas-comfy-tasks/${encodeURIComponent(taskId)}`, {}, {cascadeTargetId});
+            if(!res.ok){
+                if(res.status === 404) throw new Error(cascadeBackendRestartMessage());
+                throw new Error(await responseErrorMessage(res, actionFailed('canvas.comfyGenerate')));
+            }
+            const data = await res.json();
+            if(data.status === 'succeeded') return data.result || {};
+            if(data.status === 'failed') throw new Error(data.error || actionFailed('canvas.comfyGenerate'));
+            await sleep(1600);
         }
-        const data = await res.json();
-        if(data.status === 'succeeded') return data.result || {};
-        if(data.status === 'failed') throw new Error(data.error || actionFailed('canvas.comfyGenerate'));
-        await sleep(1600);
+    } finally {
+        activeComfyTaskPolls.delete(taskId);
     }
 }
 async function runQueuedComfyGenerate(payload, options={}){
     const task = await createCanvasComfyTask(payload, options);
+    // 把任务 ID 记到 pending 上：刷新/关页后 resumeCanvasImageTasks 靠它接回轮询，
+    // 后端协程还在跑时结果能自动收回，输出卡不会永久转圈。
+    if(options.pendingId){
+        const out = findOutputByPendingId(options.pendingId);
+        const pending = pendingById(out, options.pendingId);
+        if(pending){
+            pending.canvasTaskId = task.task_id;
+            pending.canvasTaskType = 'comfy';
+            scheduleSave();
+        }
+    }
     return waitCanvasComfyTaskResult(task.task_id, options);
+}
+async function pollCanvasComfyTaskResume(taskId){
+    // 本页已有内联等待在途：结果由它收回，恢复轮询直接退出，防止双跑双写。
+    if(activeComfyTaskPolls.has(taskId)) return;
+    activeComfyTaskPolls.add(taskId);
+    // 刷新后恢复 comfy 任务：后端任务记录已落盘（服务重启会被标记失败），轮询到终态后
+    // 复用 completeCanvasImageTask/failCanvasImageTask 收尾——与 online-image 恢复同一套落点。
+    let networkFailures = 0;
+    try {
+        while(true){
+            let data = null;
+            try {
+                const res = await fetch(`/api/canvas-comfy-tasks/${encodeURIComponent(taskId)}`);
+                if(!res.ok){
+                    failCanvasImageTask(taskId, res.status === 404
+                        ? cascadeBackendRestartMessage()
+                        : await responseErrorMessage(res, actionFailed('canvas.comfyGenerate')));
+                    return;
+                }
+                data = await res.json();
+                networkFailures = 0;
+            } catch(err) {
+                // 后端暂时够不着（睡眠唤醒/网络抖动）不判死，连续失败才放弃
+                if(++networkFailures >= 10){
+                    failCanvasImageTask(taskId, actionFailed('canvas.comfyGenerate'));
+                    return;
+                }
+                await sleep(1600);
+                continue;
+            }
+            if(data.status === 'succeeded'){ completeCanvasImageTask(taskId, data.result || {}); return; }
+            // 第三参传空：comfy 任务没有上游 provider 任务 ID，别让失败卡片出现走 provider 链路的"查询结果"按钮
+            if(data.status === 'failed'){ failCanvasImageTask(taskId, data.error || actionFailed('canvas.comfyGenerate'), {}); return; }
+            await sleep(1600);
+        }
+    } finally {
+        activeComfyTaskPolls.delete(taskId);
+    }
 }
 function extractUpstreamTaskId(text){
     const match = String(text || '').match(/(?:task_id|taskId|task id)\s*[=:：]\s*([A-Za-z0-9_.:-]+)/i);
@@ -14586,6 +14643,8 @@ function resumeCanvasImageTasks(){
     nodes.filter(n => n.type === 'output').forEach(out => {
         (out._pending || []).forEach(p => {
             if(p.canvasTaskType === 'online-image' && p.canvasTaskId && !p.failed) pollCanvasImageTask(p.canvasTaskId, {cascadeTargetId:p.cascadeTargetId || ''});
+            // comfy 任务：接回轮询，消除刷新后 pending 永久转圈
+            if(p.canvasTaskType === 'comfy' && p.canvasTaskId && !p.failed) pollCanvasComfyTaskResume(p.canvasTaskId);
         });
     });
 }
