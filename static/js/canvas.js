@@ -4036,6 +4036,8 @@ function installCanvasShortcuts(){
     window.addEventListener('keydown', e => {
         const t = e.target;
         if(t && (t.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]'))) return;
+        // 输入法组字期（isComposing / keyCode 229）不触发快捷键，否则中文打字会误触 o/p 等开关
+        if(e.isComposing || e.keyCode === 229 || e.which === 229) return;
         if(!canvas) return;
         const meta = e.ctrlKey || e.metaKey;
         if(meta && String(e.key).toLowerCase() === 'a'){
@@ -6841,7 +6843,7 @@ function renderNode(node){
         const label = { queued:'排队中', running:'运行中', done:'完成', failed:'失败' }[node.runStatus] || '';
         return `<span class="node-run-status ${node.runStatus}"><span class="dot"></span>${escapeHtml(label)}${node._cascadeIdx?' '+node._cascadeIdx:''}</span>`;
     })() : '';
-    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton(${jsArg(node.id)}, event)" class="node-muted hover:text-red-500"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>${nodeToolbarHtml(node)}`;
+    el.innerHTML = `<div class="node-head"><span class="node-head-left"><span class="node-type-dot" aria-hidden="true"></span><span class="node-title">${displayTitle}</span></span><div style="display:flex;align-items:center;gap:8px">${statusHtml}<button onclick="deleteNodeFromButton(${jsArg(node.id)}, event)" class="node-muted hover:text-red-500" title="${escapeAttr(tr('common.delete'))}" aria-label="${escapeAttr(tr('common.delete'))}"><i data-lucide="x" class="w-4 h-4"></i></button></div></div>${nodeToolbarHtml(node)}`;
     const body = document.createElement('div');
     body.className = 'node-body';
     if(node.type === 'image') {

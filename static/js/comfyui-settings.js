@@ -1360,7 +1360,7 @@ function imageListFieldHtml(f, value, compact){
         return `<div class="image-list-item" title="${escapeAttr(name)}">
             <span class="image-list-index">${i + 1}</span>
             ${inner}
-            <button type="button" class="image-list-del" onclick="event.stopPropagation();removeImageListItem(${jsArg(f.id)},${i})">×</button>
+            <button type="button" class="image-list-del" onclick="event.stopPropagation();removeImageListItem(${jsArg(f.id)},${i})" title="${escapeAttr(tr('common.delete'))}" aria-label="${escapeAttr(tr('common.delete'))}">×</button>
         </div>`;
     }).join('');
     return `<div class="image-list-field ${compact ? 'compact' : ''}">
@@ -1375,6 +1375,11 @@ function removeImageListItem(fieldId, index){
     const field = currentConfig?.fields?.find(f => f.id === fieldId);
     if(!field) return;
     const names = previewListForField(field, previewValues[fieldId] ?? field.default);
+    const removedName = names[index];
+    if(removedName){
+        const blobUrl = (imageListPreviewUrls[fieldId] || {})[removedName];
+        if(blobUrl){ URL.revokeObjectURL(blobUrl); delete imageListPreviewUrls[fieldId][removedName]; }
+    }
     names.splice(index, 1);
     previewValues[fieldId] = JSON.stringify(names);
     renderPreview();
@@ -1401,9 +1406,13 @@ async function pickImageList(fieldId){
             const data = await resp.json().catch(() => ({}));
             const uploaded = (data.files || []).map(x => x.comfy_name || x.filename).filter(Boolean);
             if(!uploaded.length) throw new Error('上传响应缺少文件名');
-            // 上传顺序即端口顺序，追加在已有列表后面。
+            // 上传顺序即端口顺序，追加在已有列表后面。同名覆盖时先释放旧 blob。
             files.forEach((file, i) => {
-                if(uploaded[i]) imageListPreviewUrls[fieldId][uploaded[i]] = URL.createObjectURL(file);
+                const name = uploaded[i];
+                if(!name) return;
+                const old = imageListPreviewUrls[fieldId][name];
+                if(old) URL.revokeObjectURL(old);
+                imageListPreviewUrls[fieldId][name] = URL.createObjectURL(file);
             });
             previewValues[fieldId] = JSON.stringify([...names, ...uploaded]);
             renderPreview();
@@ -1524,6 +1533,9 @@ async function onReextract(){
         if(!currentConfig.mini_cards) currentConfig.mini_cards = {};
         miniCards = {...defaultMiniCards(), ...currentConfig.mini_cards};
         currentConfig.mini_cards = miniCards;
+        // 释放旧预览 blob 再清空（与 selectWorkflow 同款，不 revoke 会持续泄漏）
+        Object.values(previewImageUrls).forEach(u => { try { URL.revokeObjectURL(u); } catch(e){} });
+        Object.values(imageListPreviewUrls).forEach(map => Object.values(map || {}).forEach(u => { try { URL.revokeObjectURL(u); } catch(e){} }));
         previewImageUrls = {};
         imageListPreviewUrls = {};
         previewValues = {};
