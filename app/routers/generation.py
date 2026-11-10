@@ -2714,6 +2714,14 @@ def generate(req: GenerateRequest):
 
                         continue
 
+                    if isinstance(value, (list, tuple)):
+
+                        # 图片列表（ImagePicker image_paths 等）的合同值是 JSON 字符串；
+                        # 画布端总是传字符串，这里兜底归一化原生数组，避免
+                        # collect_required_comfy_media 对非字符串静默跳过（跨实例不补传）
+
+                        value = json.dumps([str(x) for x in value if str(x).strip()], ensure_ascii=False)
+
                     workflow[node_id]["inputs"][input_name] = value
 
             elif isinstance(node_inputs, dict) and node_inputs.get("class_type") and isinstance(node_inputs.get("inputs"), dict):

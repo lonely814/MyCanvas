@@ -12740,7 +12740,10 @@ def analyze_comfy_workflow_io(workflow: dict) -> dict:
         for key in ("seed", "noise_seed"):
             value = inputs.get(key)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
+                # 一个采样节点同时有 seed 和 noise_seed 时实际只会用到其一，
+                # 取第一个命中就 break，避免同一节点生成两个「随机种子」字段
                 seeds.append({"node": str(node_id), "input": key, "default": value})
+                break
     prompts = []
     unnamed_counter = 0
     for index, (node_id, key, value) in enumerate(prompt_nodes):

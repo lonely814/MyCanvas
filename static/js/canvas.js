@@ -10370,11 +10370,12 @@ function addImagesToComfyNode(nodeId){
     input.onchange = async () => {
         const files = [...(input.files || [])].slice(0, CANVAS_UPLOAD_MAX);
         if(!files.length) return;
-        pushUndo();
         const point = {x:Number(node.x || 0) - 320, y:Number(node.y || 0)};
         try {
             const created = await uploadMediaFiles(files, point, false, {group:true});
             if(!created?.length) return;
+            // 上传成功才进撤销栈：失败时不会留下一个"撤了啥都没有"的空步骤
+            pushUndo();
             const source = created.group || created[0];
             if(!connections.some(c => c.from === source.id && c.to === node.id)){
                 connections.push({id:uid('c'), from:source.id, to:node.id});

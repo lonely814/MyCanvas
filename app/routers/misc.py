@@ -121,11 +121,13 @@ async def media_preview(url: str, w: int = 512):
 
     if os.path.exists(webp_path):
 
-        return FileResponse(webp_path, media_type="image/webp")
+        # 缓存键含 mtime_ns+size（内容寻址），内容不会变，可放心长缓存
+
+        return FileResponse(webp_path, media_type="image/webp", headers={"Cache-Control": "public, max-age=604800, immutable"})
 
     if os.path.exists(png_path):
 
-        return FileResponse(png_path, media_type="image/png")
+        return FileResponse(png_path, media_type="image/png", headers={"Cache-Control": "public, max-age=604800, immutable"})
 
 
 
@@ -199,7 +201,9 @@ async def image_jpeg(url: str, w: int = 0):
 
     if os.path.exists(cache_path):
 
-        return FileResponse(cache_path, media_type="image/jpeg")
+        # 缓存键含 mtime_ns+size（内容寻址），可长缓存
+
+        return FileResponse(cache_path, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=604800, immutable"})
 
 
 
