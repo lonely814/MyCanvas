@@ -388,6 +388,11 @@
         "canvas.comfyImageList": { zh: "多图", en: "list" },
         "canvas.comfyImageListPorts": { zh: "图片 {n} 张（按序进 img_1..img_9）", en: "Images {n} (into img_1..img_9 in order)" },
         "canvas.comfyImageSlot": { zh: "图 {n}", en: "Image {n}" },
-        "canvas.comfyAddImages": { zh: "添加图片", en: "Add images" }
+        "canvas.comfyAddImages": { zh: "添加图片", en: "Add images" },
+        "canvas.marqueeMode": { zh: "框选", en: "Marquee" },
+        "canvas.marqueeOn": { zh: "框选模式：拖画布空白圈选节点，选完自动退出", en: "Marquee on: drag empty canvas to select nodes (auto-exits after one selection)" },
+        "canvas.marqueeOff": { zh: "框选模式已关闭", en: "Marquee mode off" },
+        "canvas.moveUp": { zh: "上移一位", en: "Move up" },
+        "canvas.moveDown": { zh: "下移一位", en: "Move down" }
     });
 })();

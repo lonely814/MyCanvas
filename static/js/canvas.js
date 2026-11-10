@@ -441,6 +441,8 @@ let knifeChanged = false;
 let knifeNeedsRender = false;
 let selectDrag = null;
 let isRKeyDown = false;
+// 框选模式（触屏没有 Ctrl/R 修饰键）：开启后拖画布空白即框选，选完自动退出
+let marqueeMode = false;
 let menuPoint = null;
 let linkCreateState = null;
 let internalDrag = false;
@@ -10119,7 +10121,9 @@ function renderImageInputList(list, node, imageInputs, emptyText=null){
         item.draggable = true;
         item.dataset.sourceId = src.id;
         const previewHtml = src.preview && !isMissingAssetUrl(src.preview) ? canvasPreviewImgHtml(src.preview, 256) : (src.preview ? missingAssetHtml(src.preview, true) : '<i data-lucide="image" class="w-6 h-6 text-slate-400"></i>');
-        item.innerHTML = `<span class="input-index">${i + 1}</span>${previewHtml}<span class="input-label">${escapeHtml(src.label)}</span>`;
+        item.innerHTML = `<span class="input-index">${i + 1}</span>${slotReorderHtml(imageInputs.length, i, node.id, src.id)}${previewHtml}<span class="input-label">${escapeHtml(src.label)}</span>`;
+        item.querySelector('.slot-up')?.addEventListener('click', e => moveCanvasInput(node.id, src.id, -1, e));
+        item.querySelector('.slot-down')?.addEventListener('click', e => moveCanvasInput(node.id, src.id, +1, e));
         item.ondragstart = e => {
             e.stopPropagation();
             internalDrag = true;
@@ -10413,7 +10417,9 @@ function renderComfyImages(list, node, imageInputs){
                 ? `<i data-lucide="${icon}" class="w-6 h-6 text-slate-400"></i>`
                 : (src.preview && !isMissingAssetUrl(src.preview) ? canvasPreviewImgHtml(src.preview, 256) : (src.preview ? missingAssetHtml(src.preview, true) : `<i data-lucide="${icon}" class="w-6 h-6 text-slate-400"></i>`));
         item.title = title;
-        item.innerHTML = `<span class="input-index">${i + 1}</span>${previewHtml}<span class="input-label">${escapeHtml(label)}</span>`;
+        item.innerHTML = `<span class="input-index">${i + 1}</span>${slotReorderHtml(imageInputs.length, i, node.id, src.id)}${previewHtml}<span class="input-label">${escapeHtml(label)}</span>`;
+        item.querySelector('.slot-up')?.addEventListener('click', e => moveCanvasInput(node.id, src.id, -1, e));
+        item.querySelector('.slot-down')?.addEventListener('click', e => moveCanvasInput(node.id, src.id, +1, e));
         item.ondragstart = e => {
             e.stopPropagation();
             internalDrag = true;
@@ -15626,10 +15632,40 @@ function finishSelection(){
     });
     selectDrag = null;
     document.body.classList.remove('canvas-selecting');
+    // 框选模式是一次性模式：选完自动退出，否则下一次拖空白会变成框选而不是平移
+    if(marqueeMode) toggleMarqueeMode();
     window.onmousemove = null;
     window.onmouseup = null;
     render();
     if(workflowTransferModal?.classList.contains('open')) updateWorkflowTransferMeta();
+}
+function toggleMarqueeMode(){
+    marqueeMode = !marqueeMode;
+    const btn = document.getElementById('marqueeModeBtn');
+    if(btn){
+        btn.classList.toggle('active', marqueeMode);
+        btn.setAttribute('aria-pressed', String(marqueeMode));
+    }
+    document.body.classList.toggle('canvas-marquee-mode', marqueeMode);
+    setStatus(marqueeMode ? tr('canvas.marqueeOn') : tr('canvas.marqueeOff'));
+}
+function moveCanvasInput(nodeId, sourceId, dir, event){
+    // 触屏替代拖拽排序：与相邻一张换位（HTML5 DnD 在触屏上不产生 dragstart）
+    event?.preventDefault();
+    event?.stopPropagation();
+    const node = nodes.find(n => n.id === nodeId);
+    if(!node) return;
+    const imageIds = generatorSources(node).filter(s => s.refs?.length).map(s => s.id);
+    const from = imageIds.indexOf(sourceId);
+    const to = from + dir;
+    if(from < 0 || to < 0 || to >= imageIds.length) return;
+    reorderInput(node, sourceId, imageIds[to]);
+}
+function slotReorderHtml(count, i, nodeId, sourceId){
+    if(count < 2) return '';
+    const upDis = i === 0 ? ' disabled' : '';
+    const downDis = i === count - 1 ? ' disabled' : '';
+    return `<span class="slot-reorder"><button type="button" class="slot-up"${upDis} title="${escapeAttr(tr('canvas.moveUp'))}" aria-label="${escapeAttr(tr('canvas.moveUp'))}">▲</button><button type="button" class="slot-down"${downDis} title="${escapeAttr(tr('canvas.moveDown'))}" aria-label="${escapeAttr(tr('canvas.moveDown'))}">▼</button></span>`;
 }
 function renderSelectionHub(){
     selectionHub.innerHTML = '';
@@ -16945,7 +16981,7 @@ board.onmousedown = e => {
     if(document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     if(e.target !== board && e.target !== world && e.target !== nodesEl && e.target !== linksEl) return;
     closeCreateMenu();
-    if(isRKeyDown){
+    if(isRKeyDown || marqueeMode){
         e.preventDefault();
         startSelection(e);
         return;

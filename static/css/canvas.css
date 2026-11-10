@@ -981,7 +981,20 @@ body.output-list-mode .output-file-wrap .output-file-card i { width:16px !import
    资产库按钮此前就吃的这个亏，一并修掉。 */
 #canvasAssetToggle.active,
 #outputListModeBtn.active,
-#perfPillBtn.active { background:var(--strong) !important; color:var(--strong-text) !important; border-color:var(--strong) !important; }
+#perfPillBtn.active,
+#marqueeModeBtn.active { background:var(--strong) !important; color:var(--strong-text) !important; border-color:var(--strong) !important; }
+/* 框选模式：拖空白圈选（触屏没有 Ctrl/R，这是框选的常驻入口；选完自动退出） */
+body.canvas-marquee-mode #board { cursor:crosshair; }
+/* 输入槽位排序按钮（▲▼）：桌面走拖拽，触屏没有 dragstart，按钮是唯一排序入口 */
+.slot-reorder { position:absolute; right:3px; top:3px; z-index:3; display:flex; flex-direction:column; gap:2px; }
+.slot-reorder button { width:16px; height:14px; padding:0; border:none; border-radius:5px; background:rgba(241,245,249,.92); color:#64748b; font-size:8px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.slot-reorder button:hover { background:#e2e8f0; color:#0f172a; }
+.slot-reorder button:disabled { opacity:.35; cursor:default; }
+@media (hover: none) {
+    /* 触屏：槽位排序按钮与 LLM 气泡复制按钮 hover 才出现的，这里常显 + 放大命中区 */
+    .slot-reorder button { width:22px; height:20px; font-size:10px; opacity:.85; }
+    .llm-bubble-copy { display:block; }
+}
 .canvas-asset-panel { position:absolute; right:24px; top:76px; bottom:118px; z-index:41; width:320px; max-width:calc(100vw - 48px); min-height:0; display:flex; flex-direction:column; gap:10px; padding:12px; border-radius:16px; border:1px solid var(--line); background:var(--panel); color:var(--text); box-shadow:0 22px 58px var(--shadow); backdrop-filter:blur(18px); overflow:hidden; opacity:0; visibility:hidden; pointer-events:none; transform:translateY(-8px); transition:opacity .16s ease, transform .16s ease, visibility .16s ease; }
 .canvas-asset-panel.open { opacity:1; visibility:visible; pointer-events:auto; transform:translateY(0); }
 .canvas-asset-head,.canvas-asset-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
