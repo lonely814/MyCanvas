@@ -106,6 +106,16 @@ class ConnectionManager:
         }
         return len(visible_clients)
 
+    def _drop_dead(self, websocket):
+        """发送失败的僵尸连接三处一起清：只清 active_connections 会让在线数虚高、
+        user_connections 里留下死 ws，之后对这个 client 的单发推送永远静默失败。"""
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        self.connection_clients.pop(websocket, None)
+        for cid, ws in list(self.user_connections.items()):
+            if ws is websocket:
+                self.user_connections.pop(cid, None)
+
     async def broadcast_count(self):
         count = self.online_count()
         data = json.dumps({"type": "stats", "online_count": count})
@@ -114,7 +124,7 @@ class ConnectionManager:
                 await connection.send_text(data)
             except Exception as e:
                 print(f"Broadcast error: {e}")
-                self.active_connections.remove(connection)
+                self._drop_dead(connection)
 
     async def broadcast_new_image(self, image_data: dict):
         data = json.dumps({"type": "new_image", "data": image_data})
@@ -123,7 +133,7 @@ class ConnectionManager:
                 await connection.send_text(data)
             except Exception as e:
                 print(f"Broadcast image error: {e}")
-                self.active_connections.remove(connection)
+                self._drop_dead(connection)
 
     async def broadcast_canvas_updated(self, canvas_id: str, updated_at: int, client_id: str = ""):
         data = json.dumps({
@@ -137,7 +147,7 @@ class ConnectionManager:
                 await connection.send_text(data)
             except Exception as e:
                 print(f"Broadcast canvas error: {e}")
-                self.active_connections.remove(connection)
+                self._drop_dead(connection)
 
     async def broadcast_asset_library_updated(self, updated_at: int = 0):
         data = json.dumps({
@@ -149,7 +159,7 @@ class ConnectionManager:
                 await connection.send_text(data)
             except Exception as e:
                 print(f"Broadcast asset library error: {e}")
-                self.active_connections.remove(connection)
+                self._drop_dead(connection)
 
     async def send_personal_message(self, message: dict, client_id: str):
         ws = self.user_connections.get(client_id)
@@ -158,6 +168,7 @@ class ConnectionManager:
                 await ws.send_text(json.dumps(message))
             except Exception as e:
                 print(f"Personal message error for {client_id}: {e}")
+                self._drop_dead(ws)
 
 manager = ConnectionManager()
 GLOBAL_LOOP = None

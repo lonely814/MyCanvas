@@ -384,6 +384,10 @@ async def import_canvas_workflow(file: UploadFile = File(...)):
 
         raise HTTPException(status_code=400, detail="文件为空")
 
+    if len(raw) > 50 * 1024 * 1024:
+
+        raise HTTPException(status_code=413, detail="超过 50MB")
+
     name = str(file.filename or "").lower()
 
     resource_mapping = {}
@@ -395,6 +399,14 @@ async def import_canvas_workflow(file: UploadFile = File(...)):
         if name.endswith(".zip") or raw[:2] == b"PK":
 
             with zipfile.ZipFile(BytesIO(raw), "r") as zf:
+
+                # zip bomb 防护：解包前先读中央目录声明的解压总大小，超 200MB 直接拒
+
+                total_uncompressed = sum(zi.file_size for zi in zf.infolist())
+
+                if total_uncompressed > 200 * 1024 * 1024:
+
+                    raise HTTPException(status_code=413, detail="压缩包解压后超过 200MB，已拒绝")
 
                 candidates = [n for n in zf.namelist() if n.lower().endswith("workflow.json")]
 
@@ -556,7 +568,9 @@ async def import_canvas_workflow(file: UploadFile = File(...)):
 
 async def update_canvas(canvas_id: str, payload: CanvasSaveRequest):
 
-    canvas = load_canvas(canvas_id)
+    # 画布文件可达 MB 级（save_canvas 内含 fsync），同步读写会卡住事件循环（自动保存越频繁越明显）
+
+    canvas = await asyncio.to_thread(load_canvas, canvas_id)
 
     current_updated_at = int(canvas.get("updated_at") or 0)
 
@@ -592,7 +606,7 @@ async def update_canvas(canvas_id: str, payload: CanvasSaveRequest):
     if "settings" in payload.model_fields_set:
         canvas["settings"] = payload.settings or {}
 
-    save_canvas(canvas)
+    await asyncio.to_thread(save_canvas, canvas)
 
     await manager.broadcast_canvas_updated(canvas_id, int(canvas.get("updated_at") or now_ms()), payload.client_id)
 
