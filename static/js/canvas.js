@@ -427,6 +427,8 @@ let dragBoard = null;
 let minimapDrag = false;
 let minimapState = null;
 let minimapRenderQueued = false;
+let minimapViewportQueued = false;
+let lastMinimapScale = 0;
 let linksRenderQueued = false;
 let zoomPreviewState = null;
 let resizeNode = null;
@@ -1272,9 +1274,23 @@ function screenToWorld(clientX, clientY){
     const rect = board.getBoundingClientRect();
     return { x:(clientX - rect.left - viewport.x) / viewport.scale, y:(clientY - rect.top - viewport.y) / viewport.scale };
 }
+function scheduleMinimapViewport(){
+    if(minimapViewportQueued) return;
+    minimapViewportQueued = true;
+    requestAnimationFrame(() => {
+        minimapViewportQueued = false;
+        updateMinimapViewport();
+    });
+}
 function applyViewport(){
     world.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.scale})`;
-    scheduleMinimapRender();
+    // 平移（scale 不变）不重建节点块，只挪视口框——以前每次平移帧都 innerHTML 全量重建
+    // N 个节点 div + 拆掉重建视口框。缩放会改视野框尺寸与包围盒，仍走全量重算。
+    // 平移时 bounds 唯一可能过期的场景是"视野框本身就是包围盒边界时再往外平"，
+    // 表现为视口框短暂画出地图边缘，下一次全量触发（拖节点/改选/缩放）即纠正。
+    if(!minimapState || viewport.scale !== lastMinimapScale) scheduleMinimapRender();
+    else scheduleMinimapViewport();
+    lastMinimapScale = viewport.scale;
     scheduleCanvasImageResolutionSync(nodesEl, 120);
 }
 function estimatedNodeRect(n){
