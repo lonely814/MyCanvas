@@ -16695,6 +16695,20 @@ function connectionDistanceToPoint(connection, point){
     }
     return min;
 }
+function connectionHitBounds(connection, threshold){
+    // 贝塞尔曲线必落在四个控制点的包围盒内（控制点 Y 与端点相同，X 取 x1+dx / x2-dx）。
+    // 先用膨胀 threshold 的包围盒粗筛：4 次比较就能跳过绝大多数不相干的线，
+    // mousemove 的连线命中从 O(28×全部连线) 降到近似 O(28×鼠标附近的线)。
+    const from = portPoint(connection.from, 'out');
+    const to = portPoint(connection.to, 'in');
+    const dx = Math.max(80, Math.abs(to.x - from.x) * .45);
+    return {
+        minX: Math.min(from.x, to.x, from.x + dx, to.x - dx) - threshold,
+        maxX: Math.max(from.x, to.x, from.x + dx, to.x - dx) + threshold,
+        minY: Math.min(from.y, to.y) - threshold,
+        maxY: Math.max(from.y, to.y) + threshold
+    };
+}
 function updateConnectionHoverFromMouse(e){
     if(!canvas || tempLink || dragNode || dragBoard || resizeNode || knifeActive){
         setHoveredConnection('');
@@ -16710,6 +16724,8 @@ function updateConnectionHoverFromMouse(e){
     let bestId = '';
     let best = Infinity;
     connections.forEach(c => {
+        const b = connectionHitBounds(c, threshold);
+        if(point.x < b.minX || point.x > b.maxX || point.y < b.minY || point.y > b.maxY) return;
         const d = connectionDistanceToPoint(c, point);
         if(d < best){ best = d; bestId = c.id; }
     });
