@@ -1834,8 +1834,8 @@ def canvas_task_load():
     try:
         if not os.path.exists(CANVAS_TASKS_FILE):
             return
-        with open(CANVAS_TASKS_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f) or {}
+        # read_json_checked：文件损坏时改名留证再给默认值，防止后续落盘把损坏文件整体覆盖。
+        data = read_json_checked(CANVAS_TASKS_FILE, {}) or {}
         now = time.time()
         for task_id, task in (data.items() if isinstance(data, dict) else []):
             if not isinstance(task, dict):
@@ -1853,11 +1853,7 @@ def canvas_task_load():
 def canvas_task_save_locked():
     """调用方必须已持有 CANVAS_TASK_LOCK。写入失败不应影响生成流程本身。"""
     try:
-        os.makedirs(DATA_DIR, exist_ok=True)
-        tmp = CANVAS_TASKS_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(CANVAS_TASKS, f, ensure_ascii=False)
-        os.replace(tmp, CANVAS_TASKS_FILE)
+        write_json_atomic(CANVAS_TASKS_FILE, CANVAS_TASKS)
     except Exception as e:
         print(f"保存画布任务状态失败: {e}")
 
@@ -12846,12 +12842,9 @@ def runninghub_workflow_store_path() -> str:
 def load_runninghub_workflow_store():
     if not os.path.exists(RUNNINGHUB_WORKFLOW_STORE_FILE):
         return {}
-    try:
-        with open(RUNNINGHUB_WORKFLOW_STORE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    # read_json_checked：损坏时改名留证，防止 prune/save 用空 store 覆盖掉全部渠道映射。
+    data = read_json_checked(RUNNINGHUB_WORKFLOW_STORE_FILE, {})
+    return data if isinstance(data, dict) else {}
 
 def save_runninghub_workflow_store(store):
     os.makedirs(DATA_DIR, exist_ok=True)

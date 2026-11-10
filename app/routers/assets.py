@@ -653,9 +653,7 @@ async def caption_local_assets(payload: LocalAssetCaptionRequest):
 
             txt_path = core._local_upload_caption_path(filename)
 
-            with open(txt_path, "w", encoding="utf-8", newline="") as f:
-
-                f.write(caption)
+            core.write_text_atomic(txt_path, caption)
 
             item.update({
 
@@ -779,9 +777,7 @@ async def save_local_asset_caption(payload: LocalAssetCaptionSaveRequest):
 
     txt_path = core._local_upload_caption_path(filename)
 
-    with open(txt_path, "w", encoding="utf-8", newline="") as f:
-
-        f.write(caption)
+    core.write_text_atomic(txt_path, caption)
 
     return {"ok": True, "caption": caption, "caption_file": os.path.basename(txt_path)}
 

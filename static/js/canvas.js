@@ -1592,8 +1592,16 @@ async function saveCanvas(){
         if(res.status === 409){
             const data = await res.json().catch(() => ({}));
             const remote = data.detail?.canvas || data.canvas;
-            if(localCanvasDirty || saveCanvasAgain){
-                lastCanvasUpdatedAt = Number(data.detail?.updated_at || data.updated_at || remote?.updated_at || lastCanvasUpdatedAt || 0);
+            const remoteUpdatedAt = Number(data.detail?.updated_at || data.updated_at || remote?.updated_at || 0);
+            if(localCanvasDirty){
+                // 本地有未保存改动且云端已被他人更新：不许静默换基准重存（那会无声覆盖
+                // 别人的保存），交给冲突弹窗裁决——载入最新，或保留当前强制覆盖。
+                promptRemoteConflict(remoteUpdatedAt);
+                return;
+            }
+            if(saveCanvasAgain){
+                // 本地无新内容，只是保存请求在排队：换云端新基准重试一次即可，内容不丢。
+                lastCanvasUpdatedAt = remoteUpdatedAt || lastCanvasUpdatedAt;
                 saveCanvasAgain = true;
                 setStatus('Saving...');
                 return;
@@ -2057,35 +2065,10 @@ function toggleEmojiPicker(id, event){
 async function setCanvasIcon(id, icon, event){
     event?.preventDefault();
     event?.stopPropagation();
-    const item = canvases.find(c => c.id === id);
-    if(item) item.icon = icon || 'layers';
     closeCanvasMetaPopover();
-    renderCanvasList();
-    try {
-        let target = canvas?.id === id ? canvas : null;
-        if(!target) {
-            const data = await fetch(`/api/canvases/${id}`).then(r => r.json());
-            target = data.canvas;
-        }
-        target.icon = icon || 'layers';
-        const res = await fetch(`/api/canvases/${id}`, {
-            method:'PUT',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-                title:target.title,
-                icon:target.icon,
-                nodes:target.nodes || [],
-                connections:target.connections || [],
-                viewport:target.viewport || {x:0, y:0, scale:1}
-            })
-        });
-        if(!res.ok) throw new Error('图标保存失败');
-        if(canvas?.id === id) canvas.icon = target.icon;
-        await loadCanvasList(false);
-    } catch(e) {
-        setStatus('图标保存失败');
-        console.error(e);
-    }
+    // 只发 icon 的轻量 meta 请求（patchCanvasMeta 内部会更新列表与当前画布）。
+    // 之前这里是整包 PUT（nodes/connections 一起带上），并发时会把别人的保存整个覆盖掉。
+    await patchCanvasMeta(id, { icon: icon || 'layers' });
 }
 function startTitleEdit(id, titleEl){
     if(!titleEl || titleEl.querySelector('input')) return;
@@ -2121,35 +2104,9 @@ function startTitleEdit(id, titleEl){
     };
 }
 async function setCanvasTitle(id, title){
-    const item = canvases.find(c => c.id === id);
-    if(item) item.title = title;
-    if(canvas?.id === id) canvas.title = title;
-    renderCanvasList();
-    try {
-        let target = canvas?.id === id ? canvas : null;
-        if(!target){
-            const data = await fetch(`/api/canvases/${id}`).then(r => r.json());
-            target = data.canvas;
-        }
-        target.title = title;
-        const res = await fetch(`/api/canvases/${id}`, {
-            method:'PUT',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({
-                title:target.title,
-                icon:target.icon,
-                nodes:target.nodes || [],
-                connections:target.connections || [],
-                viewport:target.viewport || {x:0, y:0, scale:1}
-            })
-        });
-        if(!res.ok) throw new Error('重命名失败');
-        if(currentCanvasTitle && canvas?.id === id) currentCanvasTitle.textContent = title;
-        await loadCanvasList(false);
-    } catch(e){
-        setStatus('重命名失败');
-        console.error(e);
-    }
+    if(canvas?.id === id && currentCanvasTitle) currentCanvasTitle.textContent = title;
+    // 只发 title 的轻量 meta 请求：不带 nodes/connections，就不会在并发时整包覆盖别人的画布内容。
+    await patchCanvasMeta(id, { title });
 }
 async function openCanvas(id){
     setStatus('Opening...');
@@ -2290,7 +2247,7 @@ async function syncRemoteCanvasNow(){
         if(Number(remote?.updated_at || 0) >= Number(lastCanvasUpdatedAt || 0)){
             if(localCanvasDirty || saveCanvasAgain){
                 // 轮询路径同样尊重本地未保存改动，与广播路径走同一个冲突弹窗。
-                promptRemoteConflict();
+                promptRemoteConflict(remote?.updated_at);
                 return;
             }
             applyRemoteCanvasData(remote);
@@ -2346,18 +2303,15 @@ function handleCanvasUpdatedMessage(data){
     remoteSyncTimer = setTimeout(syncRemoteCanvasNow, savingCanvasNow ? 700 : 120);
     setStatus('Syncing...');
 }
-let remoteConflictPromptAt = 0;
-function promptRemoteConflict(){
-    const now = nowMs();
-    // 冷却期内只改状态栏：另一窗口连续保存时不要反复弹窗打扰。
-    if(now - remoteConflictPromptAt < 30000){
-        setStatus(tr('canvas.remoteKeepHint'));
-        return;
-    }
-    remoteConflictPromptAt = now;
+let lastRemoteConflictUpdatedAt = 0;
+function promptRemoteConflict(remoteUpdatedAt){
+    // 记下冲突时云端的最新时间戳，「保留当前」时用它做新基准强制覆盖一次。
+    if(remoteUpdatedAt) lastRemoteConflictUpdatedAt = Number(remoteUpdatedAt) || lastRemoteConflictUpdatedAt;
     setStatus(tr('canvas.remoteConflictTitle'));
     const modal = document.getElementById('canvasConflictModal');
-    if(!modal) return;
+    // 弹窗已经开着就别再叠一个；除此之外每次真冲突都要弹——
+    // 之前"30 秒冷却期内沿用上次决策"会把另一窗口的保存静默覆盖掉。
+    if(!modal || modal.classList.contains('open')) return;
     modal.classList.add('open');
     refreshIcons();
 }
@@ -2370,6 +2324,11 @@ function resolveRemoteConflict(loadLatest){
         saveCanvasAgain = false;
         syncRemoteCanvasNow();
     } else {
+        // 用户明确选择保留本地版本：以云端最新时间戳为新基准覆盖保存一次。
+        // 覆盖云端必须来自这次点击，自动保存链路永远不做这件事。
+        if(lastRemoteConflictUpdatedAt) lastCanvasUpdatedAt = lastRemoteConflictUpdatedAt;
+        localCanvasDirty = true;
+        saveCanvas();
         setStatus(tr('canvas.remoteKeepHint'));
     }
 }

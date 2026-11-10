@@ -121,6 +121,10 @@ async def upload_comfyui_base64(payload: Base64UploadRequest):
 
         raise HTTPException(status_code=400, detail="内容为空")
 
+    if len(content) > 50 * 1024 * 1024:
+
+        raise HTTPException(status_code=413, detail="超过 50MB")
+
     _, ext = core._local_upload_kind_ext(payload.name or "", ct or "image/png")
 
     filename = f"dx_{uuid.uuid4().hex[:12]}{ext or '.png'}"
@@ -131,9 +135,15 @@ async def upload_comfyui_base64(payload: Base64UploadRequest):
 
         try:
 
-            resp = requests.post(f"http://{addr}/upload/image",
+            # async 路由里不能直接发同步 requests：N 个实例 × 10s 超时会全叠在事件循环上，
 
-                                 files={'image': (filename, content, ct or 'image/png')}, timeout=10)
+            # ComfyUI 断网时全站无响应。进线程池（与 storage.py 的 /api/upload 同款做法）。
+
+            resp = await asyncio.to_thread(
+
+                requests.post, f"http://{addr}/upload/image",
+
+                files={'image': (filename, content, ct or 'image/png')}, timeout=10)
 
             if resp.status_code == 200:
 
