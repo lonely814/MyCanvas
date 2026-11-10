@@ -2,8 +2,8 @@ html.studio-theme-dark,
 html.studio-theme-dark body,
 body.studio-theme-dark {
     color-scheme: dark;
-    background: #08090c !important;
-    color: #e8e8ea !important;
+    /* background/color 的直钉在本文件后段「Online-generation dark pass」里
+       （同选择器、值更新），此处声明被整体压制，删掉以免误导；color-scheme 仅此处有，保留 */
 }
 
 html,
@@ -43,13 +43,8 @@ body {
     background: transparent !important;
 }
 
-body.studio-theme-dark {
-    --accent: #e8e8ea;
-    --bg: #08090c;
-    --bg-base: #08090c;
-    --card: #111216;
-    --text-main: #e8e8ea;
-}
+/* （原此处有一段 body.studio-theme-dark 变量 #08090c 系，被后段同选择器变量整体
+   压制，属死值，已删——深色变量唯一生效定义见「Online-generation dark pass」段） */
 
 html.studio-theme-dark body .app-shell,
 html.studio-theme-dark body .sidebar,
@@ -949,29 +944,10 @@ body.studio-theme-dark .hover\:text-black:hover {
     color: #e5e9f0 !important;
 }
 
-/* Final neutral dark pass: remove blue-tinted surfaces from tool pages. */
-html.studio-theme-dark,
-html.studio-theme-dark body,
-body.studio-theme-dark {
-    background: #08090c !important;
-    color: #e8e8ea !important;
-}
-
-body.studio-theme-dark {
-    --bg: #08090c;
-    --bg-base: #08090c;
-    --page: #08090c;
-    --card: #111216;
-    --card-solid: #111216;
-    --soft: #0c0d10;
-    --soft-2: #16171b;
-    --panel: rgba(17,18,22,.92);
-    --text: #e8e8ea;
-    --text-main: #e8e8ea;
-    --accent: #e8e8ea;
-    --line: #25262b;
-    --line-2: #32343a;
-}
+/* 注：此处原来还有一段「Final neutral dark pass」（html/body 背景 #08090c + 一套
+   body.studio-theme-dark 变量 #08090c 系），与下方「Online-generation dark pass」
+   同选择器、被后者按 CSS 顺序整体压制，是永不生效的死值——已删。深色变量唯一
+   生效定义在下方 Online-generation 段；--page 的全部定义点见本文件底注。 */
 
 html.studio-theme-dark body .app-shell,
 html.studio-theme-dark body .sidebar,
@@ -1649,3 +1625,13 @@ body.studio-theme-dark .shell .comfy-random-btn.active svg {
     fill: none !important;
     stroke: #0f172a !important;
 }
+
+/* =====================================================================
+   --page/--card 核心变量「定义地图」（改深色变量先看这里，避免多处互相覆盖）：
+   画布单页同时加载 canvas.css + theme.css + theme-black.css，当前生效链——
+   1. canvas.css :root          浅色值（无 .theme-dark 时）
+   2. canvas.css .theme-dark    画布自己的深色值（被 3 以更高特异性覆盖）
+   3. theme.css ~:1130 段        body.studio-theme-dark 深色值（本文件唯一生效定义）
+   4. theme-black.css :19       html.theme-black 纯黑值（!important 终审，最终压过 3）
+   改任一档前先确认不会和相邻档打架；曾经这里有两套深色段互相压制（已删死段）。
+   ===================================================================== */

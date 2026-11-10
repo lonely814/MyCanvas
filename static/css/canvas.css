@@ -982,7 +982,8 @@ body.output-list-mode .output-file-wrap .output-file-card i { width:16px !import
 #canvasAssetToggle.active,
 #outputListModeBtn.active,
 #perfPillBtn.active,
-#marqueeModeBtn.active { background:var(--strong) !important; color:var(--strong-text) !important; border-color:var(--strong) !important; }
+#marqueeModeBtn.active,
+#workflowTransferToggle.active { background:var(--strong) !important; color:var(--strong-text) !important; border-color:var(--strong) !important; }
 /* 框选模式：拖空白圈选（触屏没有 Ctrl/R，这是框选的常驻入口；选完自动退出） */
 body.canvas-marquee-mode #board { cursor:crosshair; }
 /* 输入槽位排序按钮（▲▼）：桌面走拖拽，触屏没有 dragstart，按钮是唯一排序入口 */
