@@ -393,8 +393,11 @@ function buildCard(c){
     card.dataset.canvasId = c.id;
     card.style.left = (c.board_x || 0) + 'px';
     card.style.top = (c.board_y || 0) + 'px';
-    // 卡片布局：顶部=类型标签+更多按钮；中部=标题；底部=节点数·时间。已移除图标。
+    // 卡片布局：顶部=确定性渐变封面 + 类型标签/更多按钮；中部=标题；底部=节点数·时间。
+    // 封面以画布 id 为 seed：同一画布永远同一张，纯 CSS 生成，无图片文件、无网络请求。
+    const cover = window.canvasCover ? window.canvasCover.coverHtml(c.id, 'ws-card-cover') : '';
     card.innerHTML = `
+        ${cover}
         <div class="ws-card-top">
             <span class="ws-card-kind classic">${compactLabel('普通画布','普通','Classic')}</span>
             <button class="ws-card-menu" type="button" title="${L('更多','More')}" aria-label="${L('更多','More')}"><i data-lucide="more-horizontal" class="w-4 h-4"></i></button>

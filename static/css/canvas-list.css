@@ -170,6 +170,22 @@ html[data-studio-scale="off"].studio-scale-managed .workspace {
     transition:box-shadow .16s var(--ease), border-color .16s var(--ease), transform .16s var(--ease), background .16s var(--ease);
 }
 .ws-card::before { display:none; }
+/* 确定性渐变封面（seed=c.id，见 static/js/canvas-cover.js）：铺满卡片当底，
+   内容层浮在上面。不做 blur/filter——节点/卡片平移时每帧重算会掉帧。 */
+.ws-card-cover { position:absolute; inset:0; border-radius:7px; z-index:0; pointer-events:none; }
+.ws-card > .ws-card-top,
+.ws-card > .ws-card-title,
+.ws-card > .ws-card-meta { position:relative; z-index:1; }
+.ws-card > .ws-card-title { text-shadow:0 1px 6px rgba(0,0,0,.5); }
+/* 封面是深色渐变，浅色主题的 --text(#151922) 压上去读不出来：标题固定白字 */
+.ws-card > .ws-card-title { color:#fff; }
+.ws-card > .ws-card-meta { background:rgba(255,255,255,.9); border-color:rgba(255,255,255,.4); }
+.ws-card > .ws-card-top .ws-card-kind.classic { background:rgba(255,255,255,.86); border-color:rgba(255,255,255,.5); }
+/* 封面是深色底，卡片标题在深色主题下也要保证可读（浅色主题同样处理） */
+.ws-card > .ws-card-top .ws-card-menu { background:rgba(255,255,255,.86); border-radius:6px; color:#334155; }
+.ws-card > .ws-card-top .ws-card-menu:hover { background:#fff; color:#0f172a; }
+/* 封面为深色底：标题编辑输入框改成白底深字，否则深色输入框叠深底完全看不清 */
+.ws-card > .ws-card-title-input { background:#fff; color:#0f172a; border-color:rgba(255,255,255,.7); }
 .ws-card:hover { border-color:var(--line-2); box-shadow:0 16px 36px var(--shadow-strong); transform:translateY(-2px); }
 .ws-card.dragging { box-shadow:0 20px 48px var(--shadow-strong); border-color:var(--line-2); transform:none; z-index:50; cursor:grabbing; transition:none; }
 .ws-card.cc-marked { border-color:var(--line-2); }
